@@ -51,6 +51,14 @@ let zoomScale = 1;
 let zoomTx = 0;
 let zoomTy = 0;
 
+/** ダブルタップ検出state (module scope。 handleTap/click双方からアクセス) */
+/** @type {{x: number, y: number, time: number} | null} */
+let lastTapInfo = null;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let pendingSingleTap = null;
+const DOUBLE_TAP_WINDOW = 280; // ms
+const DOUBLE_TAP_MAX_DIST = 30; // px
+
 if (!Number.isFinite(bookId)) {
   alert("?book=ID が必要です");
   location.href = "/";
@@ -397,15 +405,7 @@ function bindTouchAndTap() {
 
     // タップ判定 (拡大中も有効)
     if (!movedSwipe && elapsed < 350 && absDx < 10 && absDy < 10) {
-      const rect = stage.getBoundingClientRect();
-      const xRatio = (t.clientX - rect.left) / rect.width;
-      if (xRatio < 0.3) {
-        direction === "rtl" ? moveForward() : moveBackward();
-      } else if (xRatio > 0.7) {
-        direction === "rtl" ? moveBackward() : moveForward();
-      } else {
-        toggleMenuOverlay();
-      }
+      handleTap(t.clientX, t.clientY);
     }
   });
 
@@ -418,15 +418,7 @@ function bindTouchAndTap() {
       return;
     }
     if (e.target instanceof HTMLElement && e.target.closest("button, input, select, .menu-overlay")) return;
-    const rect = stage.getBoundingClientRect();
-    const xRatio = (e.clientX - rect.left) / rect.width;
-    if (xRatio < 0.3) {
-      direction === "rtl" ? moveForward() : moveBackward();
-    } else if (xRatio > 0.7) {
-      direction === "rtl" ? moveBackward() : moveForward();
-    } else {
-      toggleSeekOverlay();
-    }
+    handleTap(e.clientX, e.clientY);
   });
 
   // PC: Ctrl+ホイールで拡大 (カーソル位置を不動点に)
@@ -455,6 +447,76 @@ function touchDistance(a, b) {
   const dx = a.clientX - b.clientX;
   const dy = a.clientY - b.clientY;
   return Math.sqrt(dx * dx + dy * dy);
+}
+
+/**
+ * シングル/ダブルタップを判別して処理。
+ * 同一位置 (DOUBLE_TAP_MAX_DIST px以内) で DOUBLE_TAP_WINDOW ms以内の
+ * 2回目タップを double tap とみなす。 単発タップは window 経過後に
+ * 確定して executeSingleTap が走る。
+ *
+ * lastTapInfo / pendingSingleTap はクロージャ変数 (bindTouchAndTap 内)
+ */
+function handleTap(screenX, screenY) {
+  // 既に拡大時にもダブルタップで「リセット」したい (= 強制 double tap 判定可)
+  const now = performance.now();
+  if (lastTapInfo) {
+    const dt = now - lastTapInfo.time;
+    const dx = Math.abs(screenX - lastTapInfo.x);
+    const dy = Math.abs(screenY - lastTapInfo.y);
+    if (dt < DOUBLE_TAP_WINDOW && dx < DOUBLE_TAP_MAX_DIST && dy < DOUBLE_TAP_MAX_DIST) {
+      // ダブルタップ確定: 保留中のシングルタップアクションをキャンセル
+      if (pendingSingleTap !== null) {
+        clearTimeout(pendingSingleTap);
+        pendingSingleTap = null;
+      }
+      lastTapInfo = null;
+      doubleTapZoom(screenX, screenY);
+      return;
+    }
+  }
+  // シングルタップ候補として記録 (DOUBLE_TAP_WINDOW後に確定)
+  lastTapInfo = { x: screenX, y: screenY, time: now };
+  if (pendingSingleTap !== null) clearTimeout(pendingSingleTap);
+  pendingSingleTap = setTimeout(() => {
+    pendingSingleTap = null;
+    executeSingleTap(screenX, screenY);
+  }, DOUBLE_TAP_WINDOW);
+}
+
+/** 確定したシングルタップの動作 (左タップ/中央タップ/右タップ) */
+function executeSingleTap(screenX, _screenY) {
+  const rect = stage.getBoundingClientRect();
+  const xRatio = (screenX - rect.left) / rect.width;
+  if (xRatio < 0.3) {
+    direction === "rtl" ? moveForward() : moveBackward();
+  } else if (xRatio > 0.7) {
+    direction === "rtl" ? moveBackward() : moveForward();
+  } else {
+    toggleMenuOverlay();
+  }
+}
+
+/** ダブルタップ時の拡大/リセット動作 */
+function doubleTapZoom(screenX, screenY) {
+  if (zoomScale > 1.05) {
+    // すでに拡大中ならリセット
+    resetZoom();
+    return;
+  }
+  // タップ位置を不動点として 2x ズーム。
+  // anchor = タップ位置の「stage中央からのoffset」。
+  // 不動点条件: anchor * newScale + tx = anchor * oldScale + 0
+  //   → tx = anchor * (oldScale - newScale) (oldScale=1 → tx = -anchor)
+  const rect = stage.getBoundingClientRect();
+  const anchorX = screenX - (rect.left + rect.width / 2);
+  const anchorY = screenY - (rect.top + rect.height / 2);
+  const oldScale = zoomScale;
+  const newScale = 2;
+  zoomScale = newScale;
+  zoomTx = anchorX * (oldScale - newScale);
+  zoomTy = anchorY * (oldScale - newScale);
+  applyZoom();
 }
 
 function applyZoom() {
