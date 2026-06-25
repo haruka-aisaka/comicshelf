@@ -179,10 +179,27 @@ function bindEvents() {
     finishBtn.addEventListener("click", finishAndClose);
   }
 
-  // シーク: ユーザーが任意のpage indexを指定するので alignToPair は外す
-  seekBar.addEventListener("input", () => {
-    jumpTo(Number(seekBar.value), { align: false });
-  });
+  // シーク: ユーザーが任意のpage indexを指定するので alignToPair は外す。
+  //   - input: ドラッグ中も連続発火 (preview用)
+  //   - change: 確定時のみ発火 (iOS Safariの一部バージョンで input が出ない保険)
+  //   debounce で連続変化中はindicator更新だけにし、確定で実画像を読みに行く。
+  let seekDebounce = /** @type {ReturnType<typeof setTimeout> | null} */ (null);
+  const onSeekInput = () => {
+    const target = clamp(Number(seekBar.value), 0, Math.max(0, totalPages - 1));
+    // 即座にindicator / pageInput を仮更新 (体感反応)
+    if (totalPages > 0) {
+      indicator.textContent = `${target + 1} / ${totalPages}`;
+      pageInput.value = String(target + 1);
+    }
+    if (seekDebounce !== null) clearTimeout(seekDebounce);
+    seekDebounce = setTimeout(() => {
+      seekDebounce = null;
+      jumpTo(target, { align: false });
+    }, 120);
+  };
+  seekBar.addEventListener("input", onSeekInput);
+  seekBar.addEventListener("change", onSeekInput);
+
   pageInput.addEventListener("change", () => {
     const n = Number(pageInput.value) - 1;
     if (Number.isFinite(n)) jumpTo(n, { align: false });
@@ -565,9 +582,10 @@ function applyDirection() {
   pagesEl.classList.toggle("dir-rtl", direction === "rtl");
   pagesEl.classList.toggle("dir-ltr", direction !== "rtl");
   stage.classList.toggle("dir-rtl", direction === "rtl");
-  // シークバーの向きも読書方向に追従
-  // RTL: 右端=先頭(min)、 左端=末尾(max)。 漫画の右→左の流れと一致
-  seekBar.style.direction = direction === "rtl" ? "rtl" : "ltr";
+  // シークバーは見た目だけ scaleX(-1) で反転 (右端=先頭, 左端=末尾)。
+  // CSS `direction: rtl` だと iOS Safariの一部バージョンで slider value が
+  // 反転扱いされ、ページ番号と対応しなくなる既知の挙動を回避する。
+  seekBar.style.transform = direction === "rtl" ? "scaleX(-1)" : "";
 }
 
 function applySpreadClass() {
