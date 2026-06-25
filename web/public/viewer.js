@@ -32,6 +32,9 @@ const pageInput = /** @type {HTMLInputElement} */ ($("#page-input"));
 const seekTotal = $("#seek-total");
 const menuClose = $("#menu-close");
 const finishBtn = $("#finish-and-close");
+const progressBarFill = /** @type {HTMLElement|null} */ (
+  document.querySelector("#progress-bar .progress-bar-fill")
+);
 
 const params = new URLSearchParams(location.search);
 const bookId = Number(params.get("book"));
@@ -624,8 +627,25 @@ function render() {
   indicator.textContent = indices.length === 2
     ? `${indices[0] + 1}-${lastIdx + 1} / ${totalLabel}`
     : `${indices[0] + 1} / ${totalLabel}`;
+  updateProgressBar();
   const qs = new URLSearchParams({ book: String(bookId), page: String(currentPage) });
   history.replaceState(null, "", `?${qs}`);
+}
+
+function updateProgressBar() {
+  if (!progressBarFill) return;
+  const bar = progressBarFill.parentElement;
+  if (totalPages <= 0) {
+    progressBarFill.style.width = "0%";
+    return;
+  }
+  // 表示中の最終ページ (見開きなら currentPage+1) の進捗を反映
+  const indices = pageIndicesToShow();
+  const lastIdx = indices[indices.length - 1];
+  const pct = ((lastIdx + 1) / totalPages) * 100;
+  progressBarFill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  // RTL は右端から伸びる
+  if (bar) bar.dataset.dir = direction;
 }
 
 /**

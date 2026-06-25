@@ -413,6 +413,27 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   -webkit-user-drag: none;
   pointer-events: none;
 }
+/* 底部進捗バー (常時表示、 細く半透明) */
+.progress-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--safe-bottom);
+  height: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+  z-index: 4;
+}
+.progress-bar-fill {
+  display: block;
+  height: 100%;
+  background: rgba(122, 162, 247, 0.5);
+  width: 0%;
+  transition: width 0.2s ease;
+}
+.progress-bar[data-dir="rtl"] .progress-bar-fill {
+  margin-left: auto;
+}
 
 /* ---------- 単ページ表示 ---------- */
 .pages:not(.spread) img {
