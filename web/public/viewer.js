@@ -245,6 +245,12 @@ function bindTouchAndTap() {
   let movedSwipe = false;
   /** touchend直後の synthetic click を抑制するためのタイムスタンプ */
   let lastTouchAt = 0;
+  /**
+   * 直近にピンチがあったか。 ピンチ操作の末尾で「片方の指が先に離れる」 タイミングで
+   * 残った指がタップ/スワイプ判定に誤発火するのを防ぐため、 次の touchstart までは
+   * 全ジェスチャ判定を抑止する。
+   */
+  let suppressNextGesture = false;
   const SWIPE_THRESHOLD = 50;
 
   /** ピンチ中心 (stage中央からのoffset) */
@@ -270,13 +276,22 @@ function bindTouchAndTap() {
       };
       touchStart = null;
       pan = null;
+      suppressNextGesture = true;
       e.preventDefault();
     } else if (e.touches.length === 1) {
       const t = e.touches[0];
+      // 1本指の新規ジェスチャ開始 = 抑止フラグを解除して通常判定
+      suppressNextGesture = false;
       // タップ/スワイプ/pan のいずれにもなり得るので touchStart は常に記録
       touchStart = { x: t.clientX, y: t.clientY, t: performance.now() };
       pan = null;
       movedSwipe = false;
+    } else if (e.touches.length > 2) {
+      // 3本以上: 全ジェスチャ抑止
+      suppressNextGesture = true;
+      pinch = null;
+      touchStart = null;
+      pan = null;
     }
   }, { passive: false });
 
@@ -342,19 +357,13 @@ function bindTouchAndTap() {
   stage.addEventListener("touchend", (e) => {
     lastTouchAt = performance.now();
 
-    // 2フィンガーピンチから1フィンガーに減った瞬間:
-    // - pinch state を解放
-    // - 残った指で続けてスワイプ/タップ判定できるよう touchStart を再記録
-    // (これがないと「2本指で触れた瞬間に touchStart が消えて、その後の操作が無反応」になる)
+    // ピンチが解除された瞬間: 全state リセット + 次のtouchstartまで抑止。
+    // 残った指で続けて tap/swipe するケースは諦める (ピンチ余韻での誤発火を防ぐ方が重要)。
     if (pinch && e.touches.length < 2) {
       pinch = null;
-      if (e.touches.length === 1) {
-        const t = e.touches[0];
-        touchStart = { x: t.clientX, y: t.clientY, t: performance.now() };
-        pan = null;
-        movedSwipe = false;
-      }
-      // ピンチ→1 fingerへ降りた直後はジェスチャ確定ではないので、 ここで return
+      touchStart = null;
+      pan = null;
+      suppressNextGesture = true;
       return;
     }
 
@@ -365,6 +374,10 @@ function bindTouchAndTap() {
       return;
     }
     if (!touchStart) return;
+    if (suppressNextGesture) {
+      touchStart = null;
+      return;
+    }
     const t = e.changedTouches[0];
     const dx = t.clientX - touchStart.x;
     const dy = t.clientY - touchStart.y;
@@ -400,6 +413,10 @@ function bindTouchAndTap() {
   // ただし touchend 直後の synthetic click は無視 (モバイルでの二重発火防止)。
   stage.addEventListener("click", (e) => {
     if (performance.now() - lastTouchAt < 500) return;
+    if (suppressNextGesture) {
+      suppressNextGesture = false;
+      return;
+    }
     if (e.target instanceof HTMLElement && e.target.closest("button, input, select, .menu-overlay")) return;
     const rect = stage.getBoundingClientRect();
     const xRatio = (e.clientX - rect.left) / rect.width;
