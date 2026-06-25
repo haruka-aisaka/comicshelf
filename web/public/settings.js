@@ -1,4 +1,5 @@
 // @ts-check
+import("/sw-register.js").catch(() => {});
 /** 設定画面ロジック。 サーバの index status を取得し再インデックスを実行する。 */
 
 const $ = (sel) => /** @type {HTMLElement} */ (document.querySelector(sel));

@@ -1,4 +1,5 @@
 // @ts-check
+import("/sw-register.js").catch(() => {});
 /**
  * comicshelf ビューワー。
  *

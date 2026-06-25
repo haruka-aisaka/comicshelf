@@ -7,6 +7,9 @@
  */
 
 const CACHE_VERSION = "comicshelf-v1";
+const THUMB_CACHE = "comicshelf-thumb-v1";
+/** サムネキャッシュの最大保持数。 LRU 風に超過分を古い順に削除。 */
+const THUMB_CACHE_MAX_ENTRIES = 300;
 const STATIC_ASSETS = [
   "/index.html",
   "/viewer.html",
@@ -15,6 +18,7 @@ const STATIC_ASSETS = [
   "/app.js",
   "/viewer.js",
   "/settings.js",
+  "/sw-register.js",
   "/manifest.json",
   "/icons/icon.svg",
 ];
@@ -28,12 +32,23 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
+  const keep = new Set([CACHE_VERSION, THUMB_CACHE]);
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_VERSION).map((k) => caches.delete(k)))
+      Promise.all(keys.filter((k) => !keep.has(k)).map((k) => caches.delete(k)))
     ).then(() => self.clients.claim()),
   );
 });
+
+async function trimCache(cacheName, maxEntries) {
+  const cache = await caches.open(cacheName);
+  const keys = await cache.keys();
+  if (keys.length <= maxEntries) return;
+  const toRemove = keys.length - maxEntries;
+  for (let i = 0; i < toRemove; i++) {
+    await cache.delete(keys[i]);
+  }
+}
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
@@ -54,13 +69,17 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // サムネ: stale-while-revalidate
+  // サムネ: stale-while-revalidate (THUMB_CACHE に分離してサイズ制限)
   if (url.pathname.startsWith("/api/books/") && url.pathname.endsWith("/thumbnail")) {
     event.respondWith(
-      caches.open(CACHE_VERSION).then((cache) =>
+      caches.open(THUMB_CACHE).then((cache) =>
         cache.match(req).then((cached) => {
           const fetched = fetch(req).then((res) => {
-            if (res.ok) cache.put(req, res.clone()).catch(() => {});
+            if (res.ok) {
+              cache.put(req, res.clone())
+                .then(() => trimCache(THUMB_CACHE, THUMB_CACHE_MAX_ENTRIES))
+                .catch(() => {});
+            }
             return res;
           }).catch(() => cached);
           return cached || fetched;
