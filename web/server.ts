@@ -58,6 +58,9 @@ function guessMime(path: string): string {
   if (path.endsWith(".html")) return "text/html; charset=utf-8";
   if (path.endsWith(".js")) return "text/javascript; charset=utf-8";
   if (path.endsWith(".css")) return "text/css; charset=utf-8";
+  if (path.endsWith("manifest.json") || path.endsWith(".webmanifest")) {
+    return "application/manifest+json; charset=utf-8";
+  }
   if (path.endsWith(".json")) return "application/json; charset=utf-8";
   if (path.endsWith(".svg")) return "image/svg+xml";
   if (path.endsWith(".png")) return "image/png";

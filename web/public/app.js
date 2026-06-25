@@ -387,3 +387,13 @@ if (menuToggle && scrim) {
 }
 
 refresh().catch((e) => setStatus(`初期化失敗: ${e}`, "error"));
+
+// Service Worker 登録 (PWA)
+if ("serviceWorker" in navigator) {
+  // ページロード後のidleタイミングで登録 (初回ロードを遅らせない)
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((e) => {
+      console.warn("Service Worker 登録失敗", e);
+    });
+  });
+}
