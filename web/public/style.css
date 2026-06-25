@@ -173,6 +173,26 @@ button:hover { background: #2d3340; }
 .dir-link:hover { background: var(--surface-2); text-decoration: none; }
 .dir-link.active { background: var(--surface-2); color: var(--accent); }
 .dir-count { color: var(--text-dim); margin-left: 4px; font-size: 12px; }
+.dir-list-nested { padding-left: 14px; border-left: 1px dashed var(--border); margin-top: 2px; }
+.dir-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  position: relative;
+}
+.dir-summary::-webkit-details-marker { display: none; }
+.dir-summary::before {
+  content: "▶";
+  display: inline-block;
+  width: 14px;
+  font-size: 9px;
+  color: var(--text-dim);
+  margin-right: 2px;
+  transition: transform 0.15s ease;
+}
+details[open] > .dir-summary::before { transform: rotate(90deg); }
+.dir-summary .dir-link { flex: 1; }
 .sidebar-scrim { display: none; }
 
 .content {

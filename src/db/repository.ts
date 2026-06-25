@@ -147,8 +147,16 @@ export function listBooks(db: Database, opts: ListBooksOptions = {}): BookWithRe
   const whereParts: string[] = [];
   const params: (string | number)[] = [];
   if (opts.directory !== undefined) {
-    whereParts.push("b.directory = ?");
-    params.push(opts.directory);
+    // 完全一致または prefix 一致 ("by-author" を指定すれば "by-author/foo" も含む)
+    // 空文字 ("") はルート直下のみマッチ (LIKE "/%" は無意味なので completely-empty を排除)
+    if (opts.directory === "") {
+      whereParts.push("b.directory = ?");
+      params.push("");
+    } else {
+      const escaped = opts.directory.replace(/[\\%_]/g, (m) => `\\${m}`);
+      whereParts.push("(b.directory = ? OR b.directory LIKE ? ESCAPE '\\')");
+      params.push(opts.directory, `${escaped}/%`);
+    }
   }
   const trimmedQuery = opts.query?.trim();
   if (trimmedQuery) {

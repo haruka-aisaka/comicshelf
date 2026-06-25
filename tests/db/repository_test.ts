@@ -103,6 +103,27 @@ Deno.test("listBooks: directoryフィルタとunreadソート", () => {
   assertEquals(unread, ["B", "A"]);
 });
 
+Deno.test("listBooks: directoryフィルタは prefix 一致 (子孫も含む)", () => {
+  const db = openDatabase(":memory:");
+  upsertBook(db, makeBook({ path: "by-author/a/x.cbz", title: "X", directory: "by-author/a" }), 1);
+  upsertBook(db, makeBook({ path: "by-author/b/y.cbz", title: "Y", directory: "by-author/b" }), 2);
+  upsertBook(db, makeBook({ path: "by-tag/z.cbz", title: "Z", directory: "by-tag" }), 3);
+  // 完全一致パスのみ持つ書籍
+  upsertBook(db, makeBook({ path: "by-author/r.cbz", title: "R", directory: "by-author" }), 4);
+
+  // 親 prefix を指定 → 完全一致 + 子孫
+  const author = listBooks(db, { directory: "by-author", sort: "title" }).map((b) => b.title);
+  assertEquals(author.sort(), ["R", "X", "Y"]);
+
+  // 子の正確なパスを指定 → そのディレクトリのみ
+  const aOnly = listBooks(db, { directory: "by-author/a", sort: "title" }).map((b) => b.title);
+  assertEquals(aOnly, ["X"]);
+
+  // 空文字 → ルート直下のみ (該当なし)
+  const root = listBooks(db, { directory: "" }).map((b) => b.title);
+  assertEquals(root, []);
+});
+
 Deno.test("listBooks: queryによるタイトル/ディレクトリの部分一致検索", () => {
   const db = openDatabase(":memory:");
   upsertBook(db, makeBook({ path: "a/onepiece-01.cbz", title: "ONE PIECE 01", directory: "a" }), 1);

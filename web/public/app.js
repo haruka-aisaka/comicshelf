@@ -61,15 +61,106 @@ async function loadDirectories() {
   /** @type {Array<{directory: string, bookCount: number}>} */
   const dirs = data.directories;
   dirList.innerHTML = "";
-  dirList.appendChild(makeDirLink("", "すべて", null));
-  for (const d of dirs) {
-    const label = d.directory === "" ? "(ルート直下)" : d.directory;
-    dirList.appendChild(makeDirLink(d.directory, label, d.bookCount));
+  // 「すべて」 リンクは特別扱い (全件)
+  const allItem = document.createElement("li");
+  allItem.appendChild(makeDirLinkAnchor("", "すべて", null));
+  dirList.appendChild(allItem);
+
+  // ツリーへ組み立て
+  const tree = buildDirTree(dirs);
+  for (const node of tree.children.values()) {
+    dirList.appendChild(renderDirNode(node));
   }
 }
 
-function makeDirLink(value, label, count) {
+/**
+ * @typedef {{name: string, fullPath: string, bookCount: number, children: Map<string, DirNode>}} DirNode
+ */
+/** @returns {{children: Map<string, DirNode>}} */
+function buildDirTree(dirs) {
+  /** @type {{children: Map<string, DirNode>}} */
+  const root = { children: new Map() };
+  for (const d of dirs) {
+    if (d.directory === "") {
+      // ルート直下を表す擬似ノード
+      const key = "(ルート直下)";
+      const existing = root.children.get(key);
+      if (existing) {
+        existing.bookCount += d.bookCount;
+      } else {
+        root.children.set(key, {
+          name: key,
+          fullPath: "",
+          bookCount: d.bookCount,
+          children: new Map(),
+        });
+      }
+      continue;
+    }
+    const segments = d.directory.split("/");
+    let cur = root;
+    let path = "";
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      path = path === "" ? seg : `${path}/${seg}`;
+      let next = cur.children.get(seg);
+      if (!next) {
+        next = { name: seg, fullPath: path, bookCount: 0, children: new Map() };
+        cur.children.set(seg, next);
+      }
+      // 葉ノードに本数を加算 (このディレクトリが directories から来ている時のみ)
+      if (i === segments.length - 1) next.bookCount += d.bookCount;
+      cur = next;
+    }
+  }
+  return root;
+}
+
+/** @param {DirNode} node */
+function renderDirNode(node) {
   const li = document.createElement("li");
+  const hasChildren = node.children.size > 0;
+  // 子孫を含む総件数を計算
+  const totalCount = sumDescendantBookCount(node);
+  if (!hasChildren) {
+    li.appendChild(makeDirLinkAnchor(node.fullPath, node.name, totalCount));
+    return li;
+  }
+  // 親ノード: <details> で開閉可能
+  const details = document.createElement("details");
+  // 現在選択中ノードの祖先は自動で展開
+  if (
+    state.directory === node.fullPath ||
+    state.directory.startsWith(`${node.fullPath}/`)
+  ) {
+    details.open = true;
+  }
+  const summary = document.createElement("summary");
+  summary.className = "dir-summary";
+  // summary 全体クリックで toggle するため、 リンクは別途中身として配置
+  const a = makeDirLinkAnchor(node.fullPath, node.name, totalCount);
+  // summary内クリックは details の toggle を発火させない (リンクの動作を優先)
+  a.addEventListener("click", (e) => e.stopPropagation());
+  summary.appendChild(a);
+  details.appendChild(summary);
+  const ul = document.createElement("ul");
+  ul.className = "dir-list dir-list-nested";
+  for (const child of node.children.values()) {
+    ul.appendChild(renderDirNode(child));
+  }
+  details.appendChild(ul);
+  li.appendChild(details);
+  return li;
+}
+
+/** @param {DirNode} node */
+function sumDescendantBookCount(node) {
+  let total = node.bookCount;
+  for (const c of node.children.values()) total += sumDescendantBookCount(c);
+  return total;
+}
+
+function makeDirLinkAnchor(value, label, count) {
   const a = document.createElement("a");
   a.href = "#";
   a.className = "dir-link" + (state.directory === value ? " active" : "");
@@ -89,8 +180,7 @@ function makeDirLink(value, label, count) {
     a.classList.add("active");
     loadBooks();
   });
-  li.appendChild(a);
-  return li;
+  return a;
 }
 
 async function loadBooks() {
