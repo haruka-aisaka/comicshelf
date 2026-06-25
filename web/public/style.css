@@ -405,11 +405,61 @@ button:hover { background: #2d3340; }
 }
 .seek-overlay[hidden] { display: none; }
 .seek-row { display: flex; align-items: center; gap: 8px; }
+/* スライダーは appearance: none で完全カスタム化し、 thumb が端まで届くようにする。
+   ブラウザデフォルトでは thumb の半径分だけ track の有効領域が狭まるため、
+   value=0 でも thumb が端より内側で止まって見える問題への対処。
+   thumb 幅と同じだけ track に horizontal margin を入れて、 ratio計算上の
+   「左端=value 0」 が thumb の中心位置と一致するように調整する。 */
 .seek-row input[type="range"] {
   flex: 1;
-  accent-color: var(--accent);
+  appearance: none;
+  -webkit-appearance: none;
   height: 32px;
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
 }
+/* track は thumb半径分だけ左右に余白を入れる。
+   ブラウザの仕様で thumb中心は input領域内 (0..width) を動くため、
+   何もしないと value=0 でも thumb の左端 が input領域の左端 = 「端まで届いて」 見える、
+   しかし track の端も input領域の端なので thumb が track の端を覆い隠す形になり
+   「ノブが track 内側で止まっている」 ように見える。
+   track を thumb半径分内側に移動すれば、 thumb の外周と track の端が揃う。 */
+.seek-row input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  margin: 0 11px;
+}
+.seek-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  margin-top: -9px; /* (thumb高 - track高) / 2 だけ持ち上げて track中央に */
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.seek-row input[type="range"]::-moz-range-track {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  border: none;
+  margin: 0 11px;
+}
+.seek-row input[type="range"]::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.seek-row input[type="range"]:focus { outline: none; }
 .seek-info { font-size: 13px; color: var(--text-dim); }
 .seek-label { color: var(--text-dim); }
 .seek-info input[type="number"] {
