@@ -225,7 +225,13 @@ function bindEvents() {
 function bindTouchAndTap() {
   /** @type {{x: number, y: number, t: number} | null} */
   let touchStart = null;
-  /** @type {{dist: number, startScale: number, cx: number, cy: number} | null} */
+  /**
+   * ピンチ開始時のスナップショット。
+   *   startDist: 2点間距離
+   *   startScale/Tx/Ty: 拡大率・translateのstart値
+   *   anchorX/Y: ピンチ中心の「stage中央からのoffset」 (拡大の不動点)
+   * @type {{startDist: number, startScale: number, startTx: number, startTy: number, anchorX: number, anchorY: number} | null}
+   */
   let pinch = null;
   /** @type {{x: number, y: number, baseTx: number, baseTy: number} | null} */
   let pan = null;
@@ -236,13 +242,18 @@ function bindTouchAndTap() {
 
   stage.addEventListener("touchstart", (e) => {
     if (e.touches.length === 2) {
-      // pinch開始
+      // pinch開始: ピンチ中心 (画面中央からの offset) をアンカー (不動点) として記録
       const [a, b] = [e.touches[0], e.touches[1]];
+      const rect = stage.getBoundingClientRect();
+      const midX = (a.clientX + b.clientX) / 2;
+      const midY = (a.clientY + b.clientY) / 2;
       pinch = {
-        dist: touchDistance(a, b),
+        startDist: touchDistance(a, b),
         startScale: zoomScale,
-        cx: (a.clientX + b.clientX) / 2,
-        cy: (a.clientY + b.clientY) / 2,
+        startTx: zoomTx,
+        startTy: zoomTy,
+        anchorX: midX - (rect.left + rect.width / 2),
+        anchorY: midY - (rect.top + rect.height / 2),
       };
       touchStart = null;
       pan = null;
@@ -260,7 +271,13 @@ function bindTouchAndTap() {
     if (pinch && e.touches.length === 2) {
       const [a, b] = [e.touches[0], e.touches[1]];
       const newDist = touchDistance(a, b);
-      zoomScale = clamp(pinch.startScale * (newDist / pinch.dist), 1, 5);
+      const newScale = clamp(pinch.startScale * (newDist / pinch.startDist), 1, 5);
+      // ピンチ中心 (anchorX/Y) を画面上で動かさないよう translate を補正:
+      //   anchor*newScale + tx2 = anchor*startScale + startTx
+      //   tx2 = startTx + anchor*(startScale - newScale)
+      zoomScale = newScale;
+      zoomTx = pinch.startTx + pinch.anchorX * (pinch.startScale - newScale);
+      zoomTy = pinch.startTy + pinch.anchorY * (pinch.startScale - newScale);
       if (zoomScale <= 1.01) {
         zoomScale = 1;
         zoomTx = 0;
@@ -350,11 +367,18 @@ function bindTouchAndTap() {
     }
   });
 
-  // PC: Ctrl+ホイールで拡大
+  // PC: Ctrl+ホイールで拡大 (カーソル位置を不動点に)
   stage.addEventListener("wheel", (e) => {
     if (!e.ctrlKey) return;
+    const rect = stage.getBoundingClientRect();
+    const anchorX = e.clientX - (rect.left + rect.width / 2);
+    const anchorY = e.clientY - (rect.top + rect.height / 2);
+    const oldScale = zoomScale;
     const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    zoomScale = clamp(zoomScale + delta, 1, 5);
+    const newScale = clamp(zoomScale + delta, 1, 5);
+    zoomScale = newScale;
+    zoomTx = zoomTx + anchorX * (oldScale - newScale);
+    zoomTy = zoomTy + anchorY * (oldScale - newScale);
     if (zoomScale <= 1.01) {
       zoomScale = 1;
       zoomTx = 0;
@@ -506,6 +530,9 @@ function applyDirection() {
   pagesEl.classList.toggle("dir-rtl", direction === "rtl");
   pagesEl.classList.toggle("dir-ltr", direction !== "rtl");
   stage.classList.toggle("dir-rtl", direction === "rtl");
+  // シークバーの向きも読書方向に追従
+  // RTL: 右端=先頭(min)、 左端=末尾(max)。 漫画の右→左の流れと一致
+  seekBar.style.direction = direction === "rtl" ? "rtl" : "ltr";
 }
 
 function applySpreadClass() {
