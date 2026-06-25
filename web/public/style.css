@@ -384,21 +384,24 @@ button:hover { background: #2d3340; }
 .pages.spread.fit-height img { height: 100%; }
 
 /* ---------- シークオーバーレイ ---------- */
+/* viewport下端に固定し、SafeArea(ホームインジケータ)分を内部paddingで確保。
+   stageに含めると stage の padding 設定と起点が干渉するため、 viewer-body直下に。 */
 .seek-overlay {
-  position: absolute;
+  position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
   background: rgba(15, 17, 21, 0.94);
   border-top: 1px solid var(--border);
   padding: 12px 16px;
-  padding-bottom: calc(12px + var(--safe-bottom));
-  padding-left: calc(16px + var(--safe-left));
-  padding-right: calc(16px + var(--safe-right));
+  padding-bottom: max(12px, calc(12px + var(--safe-bottom)));
+  padding-left: max(16px, calc(16px + var(--safe-left)));
+  padding-right: max(16px, calc(16px + var(--safe-right)));
   z-index: 50;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  box-sizing: border-box;
 }
 .seek-overlay[hidden] { display: none; }
 .seek-row { display: flex; align-items: center; gap: 8px; }

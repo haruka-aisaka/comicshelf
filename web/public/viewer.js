@@ -179,11 +179,13 @@ function bindEvents() {
     finishBtn.addEventListener("click", finishAndClose);
   }
 
-  // シーク
-  seekBar.addEventListener("input", () => jumpTo(Number(seekBar.value)));
+  // シーク: ユーザーが任意のpage indexを指定するので alignToPair は外す
+  seekBar.addEventListener("input", () => {
+    jumpTo(Number(seekBar.value), { align: false });
+  });
   pageInput.addEventListener("change", () => {
     const n = Number(pageInput.value) - 1;
-    if (Number.isFinite(n)) jumpTo(n);
+    if (Number.isFinite(n)) jumpTo(n, { align: false });
   });
   seekClose.addEventListener("click", () => hideSeekOverlay());
 
@@ -247,15 +249,10 @@ function bindTouchAndTap() {
       e.preventDefault();
     } else if (e.touches.length === 1) {
       const t = e.touches[0];
-      if (zoomScale > 1.05) {
-        // 拡大中: pan開始
-        pan = { x: t.clientX, y: t.clientY, baseTx: zoomTx, baseTy: zoomTy };
-        touchStart = null;
-      } else {
-        // スワイプ/タップ判定用
-        touchStart = { x: t.clientX, y: t.clientY, t: performance.now() };
-        movedSwipe = false;
-      }
+      // タップ/スワイプ/pan のいずれにもなり得るので touchStart は常に記録
+      touchStart = { x: t.clientX, y: t.clientY, t: performance.now() };
+      pan = null;
+      movedSwipe = false;
     }
   }, { passive: false });
 
@@ -264,7 +261,6 @@ function bindTouchAndTap() {
       const [a, b] = [e.touches[0], e.touches[1]];
       const newDist = touchDistance(a, b);
       zoomScale = clamp(pinch.startScale * (newDist / pinch.dist), 1, 5);
-      // scaleが1に戻ったらtranslateもリセット
       if (zoomScale <= 1.01) {
         zoomScale = 1;
         zoomTx = 0;
@@ -272,17 +268,29 @@ function bindTouchAndTap() {
       }
       applyZoom();
       e.preventDefault();
-    } else if (pan && e.touches.length === 1) {
-      const t = e.touches[0];
-      zoomTx = pan.baseTx + (t.clientX - pan.x);
-      zoomTy = pan.baseTy + (t.clientY - pan.y);
-      applyZoom();
-      e.preventDefault();
-    } else if (touchStart && e.touches.length === 1) {
-      const t = e.touches[0];
-      const dx = t.clientX - touchStart.x;
-      const dy = t.clientY - touchStart.y;
-      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) movedSwipe = true;
+      return;
+    }
+    if (!touchStart || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const dx = t.clientX - touchStart.x;
+    const dy = t.clientY - touchStart.y;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+
+    if (zoomScale > 1.05) {
+      // 拡大中: 10px超の移動から pan モード
+      if (absDx > 10 || absDy > 10) {
+        if (!pan) {
+          pan = { x: touchStart.x, y: touchStart.y, baseTx: zoomTx, baseTy: zoomTy };
+        }
+        zoomTx = pan.baseTx + (t.clientX - pan.x);
+        zoomTy = pan.baseTy + (t.clientY - pan.y);
+        applyZoom();
+        e.preventDefault();
+      }
+    } else {
+      // 通常: 10px超で 「スワイプ判定中」 マーク (タップ無効化用)
+      if (absDx > 10 || absDy > 10) movedSwipe = true;
     }
   }, { passive: false });
 
@@ -290,7 +298,9 @@ function bindTouchAndTap() {
     lastTouchAt = performance.now();
     if (pinch && e.touches.length < 2) pinch = null;
     if (pan && e.touches.length === 0) {
+      // pan完了: タップ判定はスキップ
       pan = null;
+      touchStart = null;
       return;
     }
     if (!touchStart) return;
@@ -302,17 +312,15 @@ function bindTouchAndTap() {
     const elapsed = performance.now() - touchStart.t;
     touchStart = null;
 
-    if (zoomScale > 1.05) return; // 拡大中は遷移しない
-
-    // 水平スワイプ
-    if (absDx > SWIPE_THRESHOLD && absDx > absDy * 1.5) {
+    // 水平スワイプ (拡大中は pan に使うのでスキップ)
+    if (zoomScale <= 1.05 && absDx > SWIPE_THRESHOLD && absDx > absDy * 1.5) {
       movedSwipe = true;
       if (dx < 0) moveForward();
       else moveBackward();
       return;
     }
 
-    // タップ判定 (短時間、移動少ない)
+    // タップ判定 (拡大中も有効)
     if (!movedSwipe && elapsed < 350 && absDx < 10 && absDy < 10) {
       const rect = stage.getBoundingClientRect();
       const xRatio = (t.clientX - rect.left) / rect.width;
@@ -331,7 +339,6 @@ function bindTouchAndTap() {
   stage.addEventListener("click", (e) => {
     if (performance.now() - lastTouchAt < 500) return;
     if (e.target instanceof HTMLElement && e.target.closest("button, input, select, .seek-overlay")) return;
-    if (zoomScale > 1.05) return;
     const rect = stage.getBoundingClientRect();
     const xRatio = (e.clientX - rect.left) / rect.width;
     if (xRatio < 0.3) {
@@ -381,7 +388,10 @@ function moveForward() {
     jumpTo(currentPage + 1);
     return;
   }
-  // spread: 表紙(0) → 1、 ペアの右(奇数) → +2
+  // spread:
+  //   表紙 (0) → 1
+  //   ペアの右 (奇数 0-indexed) → 次ペアへ (+2)
+  //   偶数 (シーク経由で中途半端な位置) → 次のペアに揃える (+1→alignToPair)
   if (currentPage === 0) jumpTo(1);
   else jumpTo(currentPage + 2);
 }
@@ -391,7 +401,13 @@ function moveBackward() {
     jumpTo(currentPage - 1);
     return;
   }
-  if (currentPage <= 1) jumpTo(0);
+  if (currentPage <= 1) {
+    jumpTo(0);
+    return;
+  }
+  // 偶数 (= シーク後の中途半端位置) なら現在ペア境界 (-1) に戻す。
+  // 奇数 (= 正規ペアの右) なら前のペアへ (-2)。
+  if (currentPage % 2 === 0) jumpTo(currentPage - 1);
   else jumpTo(currentPage - 2);
 }
 
@@ -406,9 +422,14 @@ function alignToPair(n) {
   return n % 2 === 0 ? n - 1 : n;
 }
 
-function jumpTo(n) {
+/**
+ * @param {number} n
+ * @param {{ align?: boolean }} [opts] align=false でペア揃えをスキップ (シーク用)
+ */
+function jumpTo(n, opts = {}) {
+  const align = opts.align !== false;
   const upper = totalPages > 0 ? totalPages - 1 : currentPage;
-  const next = clamp(alignToPair(n), 0, upper);
+  const next = clamp(align ? alignToPair(n) : n, 0, upper);
   if (next === currentPage) {
     syncSeekUi();
     return;
