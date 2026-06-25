@@ -35,6 +35,9 @@ const finishBtn = $("#finish-and-close");
 const progressBarFill = /** @type {HTMLElement|null} */ (
   document.querySelector("#progress-bar .progress-bar-fill")
 );
+const loaderEl = /** @type {HTMLElement|null} */ (document.querySelector("#loader"));
+/** @type {number|undefined} スピナー表示の遅延タイマー */
+let loaderTimer;
 
 const params = new URLSearchParams(location.search);
 const bookId = Number(params.get("book"));
@@ -615,11 +618,16 @@ function render() {
   const gen = ++renderGeneration;
   const indices = pageIndicesToShow();
 
+  // 100ms 以内に decode が完了すればチラつかせない
+  showLoaderDelayed(gen);
+
   Promise.all(indices.map((i) => loadImageDecoded(i))).then((imgs) => {
     if (gen !== renderGeneration) return;
     pagesEl.replaceChildren(...imgs);
+    hideLoader();
   }).catch((e) => {
     console.warn("page render failed", e);
+    hideLoader();
   });
 
   const totalLabel = totalPages > 0 ? totalPages : "…";
@@ -630,6 +638,23 @@ function render() {
   updateProgressBar();
   const qs = new URLSearchParams({ book: String(bookId), page: String(currentPage) });
   history.replaceState(null, "", `?${qs}`);
+}
+
+function showLoaderDelayed(gen) {
+  if (!loaderEl) return;
+  if (loaderTimer !== undefined) clearTimeout(loaderTimer);
+  loaderTimer = setTimeout(() => {
+    if (gen !== renderGeneration) return;
+    loaderEl.removeAttribute("hidden");
+  }, 100);
+}
+
+function hideLoader() {
+  if (loaderTimer !== undefined) {
+    clearTimeout(loaderTimer);
+    loaderTimer = undefined;
+  }
+  if (loaderEl) loaderEl.setAttribute("hidden", "");
 }
 
 function updateProgressBar() {
