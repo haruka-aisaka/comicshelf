@@ -4,6 +4,7 @@ import type { Book, Config } from "./types.ts";
 import { getBookById, updatePageCount } from "./db/repository.ts";
 import { type PageEntry, readFirstPage } from "./reader/archive.ts";
 import { PageCache } from "./reader/page_cache.ts";
+import { generateThumbnailWebp } from "./reader/thumbnail.ts";
 
 /**
  * ライブラリ操作の集約サービス。
@@ -85,17 +86,21 @@ export class LibraryService {
   }
 
   /**
-   * サムネイル取得 (専用キャッシュ)。
+   * サムネイル取得。
    *
-   * 重要: ここで PageCache.ensure() を経由してしまうと一覧画面で
-   * 大量の書籍が一斉にフル展開されてしまう (863冊×60MB級は致命的)。
-   * サムネイルは「先頭1ページだけアーカイブから抽出」する経路で隔離する。
+   * - 先頭1ページだけアーカイブから抽出し、 ImageMagickで最大600pxにWebPへ縮小
+   * - 結果を /data/thumbs/{id}.webp にディスクキャッシュ
+   * - magickが失敗した場合 (未インストール等) は原本をそのまま返し、 拡張子別パスにキャッシュ
+   *
+   * 重要: PageCache.ensure() を経由すると一覧画面で一斉に全展開が走るので、
+   *      サムネ用ルートは隔離する。
    */
   async getThumbnail(
     bookId: number,
   ): Promise<{ bytes: Uint8Array; contentType: string; mtime: number } | null> {
     const cacheDir = this.thumbnailCacheDir();
-    for (const ext of THUMBNAIL_EXTS) {
+    // ヒット: webp優先、 後方互換で原本拡張子もチェック
+    for (const ext of THUMB_CACHE_EXTS) {
       const path = join(cacheDir, `${bookId}${ext}`);
       try {
         const [bytes, stat] = await Promise.all([Deno.readFile(path), Deno.stat(path)]);
@@ -108,7 +113,8 @@ export class LibraryService {
         // continue
       }
     }
-    // ミス: アーカイブから先頭ページだけ抽出 (全展開はしない)
+
+    // ミス: アーカイブから先頭ページを抽出
     const resolved = this.resolveBook(bookId);
     if (!resolved) return null;
     let page;
@@ -119,31 +125,41 @@ export class LibraryService {
       return null;
     }
     if (!page) return null;
+
+    // WebPへリサイズ (失敗時は原本fallback)
+    let bytes: Uint8Array;
+    let contentType: string;
+    let ext: string;
+    try {
+      bytes = await generateThumbnailWebp(page.bytes, { maxDimension: 600, quality: 82 });
+      contentType = "image/webp";
+      ext = ".webp";
+    } catch (err) {
+      console.warn(
+        `[thumbnail] resize failed for ${bookId}, falling back to original:`,
+        err instanceof Error ? err.message : err,
+      );
+      bytes = page.bytes;
+      contentType = page.contentType;
+      ext = mimeToExt(page.contentType) ?? ".bin";
+    }
+
     try {
       await Deno.mkdir(cacheDir, { recursive: true });
-      const ext = mimeToExt(page.contentType) ?? ".jpg";
-      const path = join(cacheDir, `${bookId}${ext}`);
-      await Deno.writeFile(path, page.bytes);
-      const stat = await Deno.stat(path);
-      return {
-        bytes: page.bytes,
-        contentType: page.contentType,
-        mtime: stat.mtime?.getTime() ?? Date.now(),
-      };
+      const cachePath = join(cacheDir, `${bookId}${ext}`);
+      await Deno.writeFile(cachePath, bytes);
+      const stat = await Deno.stat(cachePath);
+      return { bytes, contentType, mtime: stat.mtime?.getTime() ?? Date.now() };
     } catch (err) {
       console.warn(`[thumbnail] failed to cache ${bookId}:`, err);
-      return {
-        bytes: page.bytes,
-        contentType: page.contentType,
-        mtime: Date.now(),
-      };
+      return { bytes, contentType, mtime: Date.now() };
     }
   }
 
   async invalidateBookCache(bookId: number): Promise<void> {
     await this.pageCache.invalidate(bookId);
     const cacheDir = this.thumbnailCacheDir();
-    for (const ext of THUMBNAIL_EXTS) {
+    for (const ext of THUMB_CACHE_EXTS) {
       try {
         await Deno.remove(join(cacheDir, `${bookId}${ext}`));
       } catch { /* ignore */ }
@@ -155,7 +171,8 @@ export class LibraryService {
   }
 }
 
-const THUMBNAIL_EXTS = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".bmp"];
+/** サムネキャッシュで使用する拡張子。 .webpを最優先で探す。 */
+const THUMB_CACHE_EXTS = [".webp", ".jpg", ".jpeg", ".png", ".gif", ".avif", ".bmp"];
 
 function extToMime(ext: string): string {
   switch (ext) {

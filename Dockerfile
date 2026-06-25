@@ -9,6 +9,12 @@
 # ------------------------------------------------------------
 FROM denoland/deno:2.8.3 AS base
 
+# ImageMagick: サムネイルをWebPへリサイズするのに使う (magick CLI)
+# Debianパッケージはlibwebp delegateを含むので追加依存なし。
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends imagemagick && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # ------------------------------------------------------------
@@ -56,6 +62,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 #   --allow-env          COMICSHELF_CONFIG, HOME, DENO_DIR 等
 #   --allow-ffi          @db/sqlite のFFI呼び出し
 #   --allow-sys          @db/sqlite が osType等を参照
+#   --allow-run=magick   ImageMagick CLI 呼び出し (サムネWebP変換)
 CMD ["deno", "run", \
      "--allow-net", \
      "--allow-read", \
@@ -63,4 +70,5 @@ CMD ["deno", "run", \
      "--allow-env", \
      "--allow-ffi", \
      "--allow-sys", \
+     "--allow-run=magick", \
      "web/server.ts"]

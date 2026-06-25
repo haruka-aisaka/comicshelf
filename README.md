@@ -20,7 +20,7 @@
 ## クイックスタート (Docker)
 
 ```bash
-git clone https://github.com/<your-account>/comicshelf.git
+git clone https://github.com/haruka-aisaka/comicshelf.git
 cd comicshelf
 
 # 環境変数: COMICS_DIR (必須) ほか
