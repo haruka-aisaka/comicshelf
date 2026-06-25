@@ -1,0 +1,34 @@
+# Docker Compose for comicshelf
+#
+# 使い方:
+#   1. config.example.json を config/config.json にコピーし設定を編集
+#      (コンテナ内パス /comics, /data を前提に書くこと)
+#   2. .env で COMICS_DIR (ホスト側の漫画ライブラリ) を指定
+#   3. docker compose up -d
+
+services:
+  comicshelf:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: comicshelf:latest
+    container_name: comicshelf
+    restart: unless-stopped
+    ports:
+      # BIND_ADDR を指定すると特定インターフェースのみで待ち受け
+      # 例: Tailscale IPを指定すればVPN経由のみアクセス可能になる
+      - "${BIND_ADDR:-0.0.0.0}:${COMICSHELF_PORT:-8080}:8080"
+    volumes:
+      # 漫画ライブラリ (読み取り専用)
+      - "${COMICS_DIR:?COMICS_DIR must be set in .env}:/comics:ro"
+      # SQLite等の永続データ
+      - ./data:/data
+      # 設定ファイル
+      - ./config:/config:ro
+    environment:
+      - TZ=${TZ:-Asia/Tokyo}
+      - COMICSHELF_CONFIG=/config/config.json
+    # ホストUID/GIDでファイルを書き込むため明示的に指定。
+    # 公式denoイメージのdenoユーザー(UID=1993)を使うと、bind-mountした
+    # ホストディレクトリへの書き込みでパーミッションエラーになる。
+    user: "${PUID:-1000}:${PGID:-1000}"

@@ -1,0 +1,14 @@
+config.json
+config/config.json
+data/
+.env
+.env.local
+*.db
+tests/e2e/artifacts/
+*.db-journal
+*.db-wal
+*.db-shm
+.DS_Store
+node_modules/
+.vscode/
+.idea/

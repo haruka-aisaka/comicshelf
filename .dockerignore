@@ -1,0 +1,17 @@
+.git
+.gitignore
+.github
+.vscode
+.idea
+node_modules
+data
+config/config.json
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+README.md
+docs/
+tests/
+.env
+.env.*

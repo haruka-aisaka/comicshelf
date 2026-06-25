@@ -1,0 +1,16 @@
+{
+  "library": {
+    "roots": ["/comics"],
+    "extensions": [".cbz", ".zip"]
+  },
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080
+  },
+  "database": {
+    "path": "/data/comicshelf.db"
+  },
+  "indexer": {
+    "watchInterval": 3600
+  }
+}
