@@ -24,7 +24,14 @@ const titleEl = $("#book-title");
 const prevBtn = $("#prev");
 const nextBtn = $("#next");
 const fitSel = /** @type {HTMLSelectElement} */ ($("#fit"));
-const spreadCb = /** @type {HTMLInputElement} */ ($("#spread"));
+const spreadModeSel = /** @type {HTMLSelectElement|null} */ (
+  document.querySelector("#spread-mode")
+);
+/** 「実際に見開き表示するか」 を一元管理。 spreadMode と orientation から導出 */
+const spreadCb = {
+  /** @type {boolean} */
+  checked: false,
+};
 const directionSel = /** @type {HTMLSelectElement} */ ($("#direction"));
 const menuOverlay = $("#menu-overlay");
 const seekBar = /** @type {HTMLInputElement} */ ($("#seek-bar"));
@@ -51,6 +58,34 @@ const PREFETCH_RADIUS = 2;
 
 const DIRECTION_KEY = "comicshelf.direction";
 let direction = localStorage.getItem(DIRECTION_KEY) ?? "rtl";
+
+const SPREAD_MODE_KEY = "comicshelf.spreadMode";
+/** @type {"auto"|"single"|"spread"} */
+let spreadMode = /** @type {any} */ (localStorage.getItem(SPREAD_MODE_KEY) ?? "auto");
+if (!["auto", "single", "spread"].includes(spreadMode)) spreadMode = "auto";
+
+const orientationLandscapeMq = window.matchMedia("(orientation: landscape)");
+
+function isLandscape() {
+  return orientationLandscapeMq.matches;
+}
+
+function recomputeSpread() {
+  if (spreadMode === "spread") spreadCb.checked = true;
+  else if (spreadMode === "single") spreadCb.checked = false;
+  else spreadCb.checked = isLandscape();
+}
+recomputeSpread();
+
+function applySpreadModeChange() {
+  const prev = spreadCb.checked;
+  recomputeSpread();
+  if (prev === spreadCb.checked) return;
+  applySpreadClass();
+  currentPage = clamp(alignToPair(currentPage), 0, Math.max(0, totalPages - 1));
+  resetZoom();
+  render();
+}
 
 /** ピンチ拡大state */
 let zoomScale = 1;
@@ -169,14 +204,27 @@ function prefetchAround(centerPage) {
 function bindEvents() {
   prevBtn.addEventListener("click", () => moveBackward());
   nextBtn.addEventListener("click", () => moveForward());
-  spreadCb.addEventListener("change", () => {
-    applySpreadClass();
-    // spread切替時にcurrentPageを揃え直す
-    currentPage = clamp(alignToPair(currentPage), 0, Math.max(0, totalPages - 1));
-    // 拡大状態が残っていると単→見開き切替時にレイアウトが崩れるためリセット
-    resetZoom();
-    render();
-  });
+  if (spreadModeSel) {
+    spreadModeSel.value = spreadMode;
+    spreadModeSel.addEventListener("change", () => {
+      spreadMode = /** @type {any} */ (spreadModeSel.value);
+      localStorage.setItem(SPREAD_MODE_KEY, spreadMode);
+      applySpreadModeChange();
+    });
+  }
+  // orientation 変化を監視 (auto モード時のみ反映)
+  let orientationDebounce;
+  const onOrientation = () => {
+    if (spreadMode !== "auto") return;
+    if (orientationDebounce !== undefined) clearTimeout(orientationDebounce);
+    orientationDebounce = setTimeout(applySpreadModeChange, 100);
+  };
+  if (orientationLandscapeMq.addEventListener) {
+    orientationLandscapeMq.addEventListener("change", onOrientation);
+  } else {
+    // 古い Safari 向けフォールバック
+    orientationLandscapeMq.addListener?.(onOrientation);
+  }
   fitSel.addEventListener("change", () => applyFit());
   if (directionSel) {
     directionSel.value = direction;
