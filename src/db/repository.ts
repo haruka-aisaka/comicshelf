@@ -97,6 +97,8 @@ export interface ListBooksOptions {
   directory?: string;
   sort?: SortKey;
   status?: ReadStatusFilter;
+  /** タイトル/ディレクトリの部分一致検索 (大文字小文字無視) */
+  query?: string;
   limit?: number;
   offset?: number;
 }
@@ -147,6 +149,16 @@ export function listBooks(db: Database, opts: ListBooksOptions = {}): BookWithRe
   if (opts.directory !== undefined) {
     whereParts.push("b.directory = ?");
     params.push(opts.directory);
+  }
+  const trimmedQuery = opts.query?.trim();
+  if (trimmedQuery) {
+    // LIKE のメタ文字 (% _ \) をエスケープして部分一致パターンに整形
+    const escaped = trimmedQuery.replace(/[\\%_]/g, (m) => `\\${m}`);
+    const pattern = `%${escaped}%`;
+    whereParts.push(
+      "(b.title LIKE ? ESCAPE '\\' COLLATE NOCASE OR b.directory LIKE ? ESCAPE '\\' COLLATE NOCASE)",
+    );
+    params.push(pattern, pattern);
   }
   const statusClause = statusFilterClause(status);
   if (statusClause) whereParts.push(statusClause);

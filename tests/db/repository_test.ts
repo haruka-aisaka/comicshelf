@@ -103,6 +103,31 @@ Deno.test("listBooks: directoryフィルタとunreadソート", () => {
   assertEquals(unread, ["B", "A"]);
 });
 
+Deno.test("listBooks: queryによるタイトル/ディレクトリの部分一致検索", () => {
+  const db = openDatabase(":memory:");
+  upsertBook(db, makeBook({ path: "a/onepiece-01.cbz", title: "ONE PIECE 01", directory: "a" }), 1);
+  upsertBook(db, makeBook({ path: "a/naruto-01.cbz", title: "NARUTO 01", directory: "a" }), 2);
+  upsertBook(db, makeBook({ path: "b/x.cbz", title: "X", directory: "by-author/one" }), 3);
+  upsertBook(db, makeBook({ path: "c/y.cbz", title: "Y_underscore", directory: "c" }), 4);
+
+  // タイトル一致 (大文字小文字無視)
+  const onePiece = listBooks(db, { query: "one piece" }).map((b) => b.title);
+  assertEquals(onePiece, ["ONE PIECE 01"]);
+
+  // ディレクトリ一致 (タイトルにマッチしない "one" でも directory に含まれていればヒット)
+  const oneMatches = listBooks(db, { query: "one", sort: "title" }).map((b) => b.title);
+  // "ONE PIECE 01" (タイトル) と "X" (directory が by-author/one)
+  assertEquals(oneMatches.sort(), ["ONE PIECE 01", "X"].sort());
+
+  // 空文字や空白のみは無効化されて全件返る
+  assertEquals(listBooks(db, { query: "" }).length, 4);
+  assertEquals(listBooks(db, { query: "   " }).length, 4);
+
+  // LIKE メタ文字を含むクエリも文字列として扱う (`_` ワイルドカード扱いしない)
+  const underscore = listBooks(db, { query: "_underscore" }).map((b) => b.title);
+  assertEquals(underscore, ["Y_underscore"]);
+});
+
 Deno.test("listDirectories: 重複排除と件数集計", () => {
   const db = openDatabase(":memory:");
   upsertBook(db, makeBook({ path: "dir1/a.cbz", directory: "dir1" }), 1);

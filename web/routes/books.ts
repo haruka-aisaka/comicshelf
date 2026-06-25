@@ -40,10 +40,11 @@ export function buildBooksRoutes(deps: BooksDeps): Hono {
         ? (statusParam as ReadStatusFilter)
         : "all";
     const directory = c.req.query("directory") ?? undefined;
+    const query = c.req.query("q") ?? undefined;
     const limit = parseIntOr(c.req.query("limit"), 200);
     const offset = parseIntOr(c.req.query("offset"), 0);
-    const books = listBooks(deps.db, { sort, status, directory, limit, offset });
-    return c.json({ books, sort, status, directory, limit, offset });
+    const books = listBooks(deps.db, { sort, status, directory, query, limit, offset });
+    return c.json({ books, sort, status, directory, query, limit, offset });
   });
 
   app.get("/directories", (c) => {

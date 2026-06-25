@@ -10,14 +10,16 @@ const grid = $("#grid");
 const empty = $("#empty");
 const sortSel = /** @type {HTMLSelectElement} */ ($("#sort"));
 const filterSel = /** @type {HTMLSelectElement} */ ($("#status-filter"));
+const searchInput = /** @type {HTMLInputElement|null} */ (document.querySelector("#search"));
 const statusEl = /** @type {HTMLElement} */ (document.querySelector(".topbar .status"));
 const dirList = $("#directories");
 
-/** @type {{sort: string, directory: string, status: string}} */
+/** @type {{sort: string, directory: string, status: string, query: string}} */
 const state = readQuery();
 
 sortSel.value = state.sort;
 if (filterSel) filterSel.value = state.status;
+if (searchInput) searchInput.value = state.query;
 
 sortSel.addEventListener("change", () => {
   state.sort = sortSel.value;
@@ -29,6 +31,21 @@ if (filterSel) {
     state.status = filterSel.value;
     writeQuery();
     loadBooks();
+  });
+}
+
+if (searchInput) {
+  /** @type {number|undefined} */
+  let debounceTimer;
+  searchInput.addEventListener("input", () => {
+    if (debounceTimer !== undefined) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      const next = searchInput.value.trim();
+      if (next === state.query) return;
+      state.query = next;
+      writeQuery();
+      loadBooks();
+    }, 200);
   });
 }
 
@@ -78,6 +95,7 @@ async function loadBooks() {
   const params = new URLSearchParams({ sort: state.sort });
   if (state.directory !== "") params.set("directory", state.directory);
   if (state.status && state.status !== "all") params.set("status", state.status);
+  if (state.query !== "") params.set("q", state.query);
   // 個別のreadStateを取らずに描画するため、未読バッジは表示時点のpageCount=null等で代用
   const res = await fetch(`/api/books?${params}`);
   const data = await res.json();
@@ -135,6 +153,7 @@ function readQuery() {
     sort: q.get("sort") ?? "title",
     directory: q.get("directory") ?? "",
     status: q.get("status") ?? "all",
+    query: q.get("q") ?? "",
   };
 }
 
@@ -143,6 +162,7 @@ function writeQuery() {
   if (state.sort !== "title") q.set("sort", state.sort);
   if (state.directory !== "") q.set("directory", state.directory);
   if (state.status && state.status !== "all") q.set("status", state.status);
+  if (state.query !== "") q.set("q", state.query);
   const qs = q.toString();
   history.replaceState(null, "", qs ? `?${qs}` : location.pathname);
 }
