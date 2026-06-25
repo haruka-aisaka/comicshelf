@@ -70,9 +70,8 @@ export class IndexerService {
     private readonly library: LibraryService,
     options: { warmupConcurrency?: number; now?: () => number } = {},
   ) {
-    // Pi4の4コアでmagickがCPU 100%食うのを考慮し並列度3が安全圏。
-    // これ以上だと並行HTTPリクエストが詰まり、 一覧画面の操作が止まる。
-    this.warmupConcurrency = options.warmupConcurrency ?? 3;
+    // Pi4の4コアでmagickがCPU 100%食うのを考慮。 並列度2 + niceで操作中の応答性を最優先。
+    this.warmupConcurrency = options.warmupConcurrency ?? 2;
     this.now = options.now ?? (() => Date.now());
   }
 
@@ -154,7 +153,7 @@ export class IndexerService {
         }
         this._warmup.done++;
         // CPU/IOを譲ってメインのHTTP要求が詰まらないようにする
-        await new Promise<void>((r) => setTimeout(r, 30));
+        await new Promise<void>((r) => setTimeout(r, 80));
       }
     };
     await Promise.all(

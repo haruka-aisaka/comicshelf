@@ -24,8 +24,12 @@ export async function generateThumbnailWebp(
   const maxDim = opts.maxDimension ?? 600;
   const quality = opts.quality ?? 82;
 
-  const cmd = new Deno.Command("magick", {
+  // nice -n 19 で magick を最低優先度にし、HTTPリクエスト処理を優先させる
+  const cmd = new Deno.Command("nice", {
     args: [
+      "-n",
+      "19",
+      "magick",
       "-",
       "-auto-orient",
       "-thumbnail",

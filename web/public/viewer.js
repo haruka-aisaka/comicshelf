@@ -226,11 +226,9 @@ function bindTouchAndTap() {
   /** @type {{x: number, y: number, t: number} | null} */
   let touchStart = null;
   /**
-   * ピンチ開始時のスナップショット。
-   *   startDist: 2点間距離
-   *   startScale/Tx/Ty: 拡大率・translateのstart値
-   *   anchorX/Y: ピンチ中心の「stage中央からのoffset」 (拡大の不動点)
-   * @type {{startDist: number, startScale: number, startTx: number, startTy: number, anchorX: number, anchorY: number} | null}
+   * ピンチ追跡state。 毎フレーム前回値で更新し、 差分を積み上げる方式で
+   * scale変化と中心位置の追従を同時に滑らかに行う。
+   * @type {{prevDist: number, prevAnchorX: number, prevAnchorY: number} | null}
    */
   let pinch = null;
   /** @type {{x: number, y: number, baseTx: number, baseTy: number} | null} */
@@ -240,20 +238,26 @@ function bindTouchAndTap() {
   let lastTouchAt = 0;
   const SWIPE_THRESHOLD = 50;
 
+  /** ピンチ中心 (stage中央からのoffset) */
+  function anchorOf(a, b) {
+    const rect = stage.getBoundingClientRect();
+    const midX = (a.clientX + b.clientX) / 2;
+    const midY = (a.clientY + b.clientY) / 2;
+    return {
+      x: midX - (rect.left + rect.width / 2),
+      y: midY - (rect.top + rect.height / 2),
+    };
+  }
+
   stage.addEventListener("touchstart", (e) => {
     if (e.touches.length === 2) {
-      // pinch開始: ピンチ中心 (画面中央からの offset) をアンカー (不動点) として記録
+      // pinch開始: 直近の指間距離とピンチ中心を記録 (毎フレーム更新する基準値)
       const [a, b] = [e.touches[0], e.touches[1]];
-      const rect = stage.getBoundingClientRect();
-      const midX = (a.clientX + b.clientX) / 2;
-      const midY = (a.clientY + b.clientY) / 2;
+      const anchor = anchorOf(a, b);
       pinch = {
-        startDist: touchDistance(a, b),
-        startScale: zoomScale,
-        startTx: zoomTx,
-        startTy: zoomTy,
-        anchorX: midX - (rect.left + rect.width / 2),
-        anchorY: midY - (rect.top + rect.height / 2),
+        prevDist: touchDistance(a, b),
+        prevAnchorX: anchor.x,
+        prevAnchorY: anchor.y,
       };
       touchStart = null;
       pan = null;
@@ -271,19 +275,34 @@ function bindTouchAndTap() {
     if (pinch && e.touches.length === 2) {
       const [a, b] = [e.touches[0], e.touches[1]];
       const newDist = touchDistance(a, b);
-      const newScale = clamp(pinch.startScale * (newDist / pinch.startDist), 1, 5);
-      // ピンチ中心 (anchorX/Y) を画面上で動かさないよう translate を補正:
-      //   anchor*newScale + tx2 = anchor*startScale + startTx
-      //   tx2 = startTx + anchor*(startScale - newScale)
+      const anchor = anchorOf(a, b);
+
+      // 差分積み上げ方式:
+      //  - 拡大率は前フレーム比 (newDist/prevDist) で増減
+      //  - 不動点条件: 前フレーム anchor 位置 = scale*anchor + tx で画面上で同位置
+      //    → newTx = oldTx + prevAnchor*(oldScale - newScale)
+      //  - さらに指自体の移動分 (newAnchor - prevAnchor) も translate に加算
+      const oldScale = zoomScale;
+      const newScale = clamp(oldScale * (newDist / pinch.prevDist), 1, 5);
+
+      zoomTx = zoomTx + pinch.prevAnchorX * (oldScale - newScale) +
+        (anchor.x - pinch.prevAnchorX);
+      zoomTy = zoomTy + pinch.prevAnchorY * (oldScale - newScale) +
+        (anchor.y - pinch.prevAnchorY);
       zoomScale = newScale;
-      zoomTx = pinch.startTx + pinch.anchorX * (pinch.startScale - newScale);
-      zoomTy = pinch.startTy + pinch.anchorY * (pinch.startScale - newScale);
+
       if (zoomScale <= 1.01) {
         zoomScale = 1;
         zoomTx = 0;
         zoomTy = 0;
       }
       applyZoom();
+
+      // 次フレーム用の基準値を更新
+      pinch.prevDist = newDist;
+      pinch.prevAnchorX = anchor.x;
+      pinch.prevAnchorY = anchor.y;
+
       e.preventDefault();
       return;
     }
@@ -313,7 +332,23 @@ function bindTouchAndTap() {
 
   stage.addEventListener("touchend", (e) => {
     lastTouchAt = performance.now();
-    if (pinch && e.touches.length < 2) pinch = null;
+
+    // 2フィンガーピンチから1フィンガーに減った瞬間:
+    // - pinch state を解放
+    // - 残った指で続けてスワイプ/タップ判定できるよう touchStart を再記録
+    // (これがないと「2本指で触れた瞬間に touchStart が消えて、その後の操作が無反応」になる)
+    if (pinch && e.touches.length < 2) {
+      pinch = null;
+      if (e.touches.length === 1) {
+        const t = e.touches[0];
+        touchStart = { x: t.clientX, y: t.clientY, t: performance.now() };
+        pan = null;
+        movedSwipe = false;
+      }
+      // ピンチ→1 fingerへ降りた直後はジェスチャ確定ではないので、 ここで return
+      return;
+    }
+
     if (pan && e.touches.length === 0) {
       // pan完了: タップ判定はスキップ
       pan = null;
