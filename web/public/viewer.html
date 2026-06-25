@@ -9,52 +9,50 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body class="viewer-body">
-  <header class="viewer-bar">
-    <a href="/" class="back" aria-label="一覧へ戻る">←</a>
-    <span id="book-title" class="book-title"></span>
-    <span id="page-indicator" class="page-indicator">- / -</span>
-    <button id="settings-toggle" class="icon-btn" type="button" aria-label="設定">⚙</button>
-  </header>
-
-  <div id="settings-panel" class="settings-panel" hidden>
-    <label>
-      <input type="checkbox" id="spread"> 見開き
-    </label>
-    <label>
-      <span>表示</span>
-      <select id="fit">
-        <option value="height">高さに合わせる</option>
-        <option value="width">幅に合わせる</option>
-        <option value="contain">全体表示</option>
-      </select>
-    </label>
-    <label>
-      <span>読書方向</span>
-      <select id="direction">
-        <option value="rtl">右→左 (漫画)</option>
-        <option value="ltr">左→右</option>
-      </select>
-    </label>
-    <button id="finish-and-close" type="button" class="finish-btn">既読にして閉じる</button>
-  </div>
-
   <div id="stage" class="stage" tabindex="0">
     <button class="nav-prev" id="prev" aria-label="前のページ">‹</button>
     <div id="pages" class="pages"></div>
     <button class="nav-next" id="next" aria-label="次のページ">›</button>
   </div>
 
-  <!-- シーク用オーバーレイ (画面中央タップで表示/非表示)。
-       stageの外に置いて viewport bottom を起点にし、SafeAreaの内側に確実に配置する。 -->
-  <div id="seek-overlay" class="seek-overlay" hidden>
-    <div class="seek-row">
+  <!-- 中央タップで開く統合メニュー: 戻る・タイトル・進捗・シーク・設定・既読化 -->
+  <div id="menu-overlay" class="menu-overlay" hidden>
+    <div class="menu-row menu-header">
+      <a href="/" class="back" aria-label="一覧に戻る">←</a>
+      <span id="book-title" class="book-title"></span>
+      <span id="page-indicator" class="page-indicator">- / -</span>
+      <button type="button" id="menu-close" class="seek-close" aria-label="閉じる">×</button>
+    </div>
+    <div class="menu-row">
       <input type="range" id="seek-bar" min="0" max="0" value="0" step="1">
     </div>
-    <div class="seek-row seek-info">
+    <div class="menu-row seek-info">
       <span class="seek-label">ページ</span>
       <input type="number" id="page-input" min="1" max="1" value="1">
       <span class="seek-total">/ <span id="seek-total">-</span></span>
-      <button type="button" id="seek-close" class="seek-close" aria-label="閉じる">×</button>
+    </div>
+    <div class="menu-row menu-settings">
+      <label>
+        <input type="checkbox" id="spread"> 見開き
+      </label>
+      <label>
+        <span>表示</span>
+        <select id="fit">
+          <option value="height">高さ</option>
+          <option value="width">幅</option>
+          <option value="contain">全体</option>
+        </select>
+      </label>
+      <label>
+        <span>方向</span>
+        <select id="direction">
+          <option value="rtl">右→左</option>
+          <option value="ltr">左→右</option>
+        </select>
+      </label>
+    </div>
+    <div class="menu-row">
+      <button id="finish-and-close" type="button" class="finish-btn">既読にして閉じる</button>
     </div>
   </div>
 

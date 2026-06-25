@@ -263,26 +263,7 @@ button:hover { background: #2d3340; }
   flex-direction: column;
   height: 100dvh;
   overflow: hidden;
-  /* notchやhome indicator背後を bar 色で塗る (ステージ=黒との境界を綺麗に) */
-  background: var(--surface);
-}
-.viewer-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
-  /* SafeArea込みでヘッダーが画面端 (notch背後) まで確実に届くようにする */
-  padding-top: max(8px, calc(8px + var(--safe-top)));
-  padding-left: max(16px, calc(16px + var(--safe-left)));
-  padding-right: max(16px, calc(16px + var(--safe-right)));
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  /* SafeAreaが大きい(Dynamic Island)時の最低高さ保証 */
-  min-height: calc(40px + var(--safe-top));
-  box-sizing: border-box;
+  background: #000;
 }
 .back {
   white-space: nowrap;
@@ -300,6 +281,7 @@ button:hover { background: #2d3340; }
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  font-size: 13px;
 }
 .icon-btn {
   padding: 4px 10px;
@@ -307,18 +289,6 @@ button:hover { background: #2d3340; }
   border: 1px solid var(--border);
   font-size: 16px;
 }
-
-.settings-panel {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding: 12px 16px;
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-/* hidden 属性を尊重 (display:flex に上書きされないように) */
-.settings-panel[hidden] { display: none; }
-.settings-panel label { display: flex; gap: 8px; align-items: center; }
 
 .stage {
   flex: 1;
@@ -383,34 +353,55 @@ button:hover { background: #2d3340; }
 }
 .pages.spread.fit-height img { height: 100%; }
 
-/* ---------- シークオーバーレイ ---------- */
-/* viewport下端に固定し、SafeArea(ホームインジケータ)分を内部paddingで確保。
-   stageに含めると stage の padding 設定と起点が干渉するため、 viewer-body直下に。 */
-.seek-overlay {
+/* ---------- 統合メニューオーバーレイ (中央タップで開く) ---------- */
+/* viewport下端に固定し、SafeArea(ホームインジケータ)分を内部paddingで確保。 */
+.menu-overlay {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(15, 17, 21, 0.94);
+  background: rgba(15, 17, 21, 0.95);
   border-top: 1px solid var(--border);
-  padding: 12px 16px;
-  padding-bottom: max(12px, calc(12px + var(--safe-bottom)));
+  padding: 14px 16px;
+  padding-bottom: max(14px, calc(14px + var(--safe-bottom)));
   padding-left: max(16px, calc(16px + var(--safe-left)));
   padding-right: max(16px, calc(16px + var(--safe-right)));
   z-index: 50;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   box-sizing: border-box;
+  /* スライドイン風 */
+  animation: menuSlideUp 0.18s ease-out;
 }
-.seek-overlay[hidden] { display: none; }
+.menu-overlay[hidden] { display: none; }
+@keyframes menuSlideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.menu-row { display: flex; align-items: center; gap: 8px; }
+.menu-row label { display: flex; align-items: center; gap: 6px; color: var(--text-dim); }
+.menu-header .book-title {
+  font-size: 14px;
+  color: var(--text);
+}
+.menu-header .back {
+  font-size: 18px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.menu-settings { flex-wrap: wrap; gap: 14px; }
+.menu-settings label { font-size: 13px; }
+.menu-settings select { font-size: 13px; padding: 4px 8px; }
 .seek-row { display: flex; align-items: center; gap: 8px; }
 /* スライダーは appearance: none で完全カスタム化し、 thumb が端まで届くようにする。
    ブラウザデフォルトでは thumb の半径分だけ track の有効領域が狭まるため、
    value=0 でも thumb が端より内側で止まって見える問題への対処。
    thumb 幅と同じだけ track に horizontal margin を入れて、 ratio計算上の
    「左端=value 0」 が thumb の中心位置と一致するように調整する。 */
-.seek-row input[type="range"] {
+.menu-overlay input[type="range"] {
   flex: 1;
   appearance: none;
   -webkit-appearance: none;
@@ -476,11 +467,12 @@ button:hover { background: #2d3340; }
 }
 
 .finish-btn {
-  margin-left: auto;
+  width: 100%;
   background: var(--surface-2);
   border: 1px solid var(--accent);
   color: var(--accent);
-  padding: 6px 14px;
+  padding: 8px 14px;
+  font-size: 14px;
 }
 .finish-btn:hover { background: var(--accent); color: #0f1115; }
 

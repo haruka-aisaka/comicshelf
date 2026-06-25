@@ -26,11 +26,11 @@ const nextBtn = $("#next");
 const fitSel = /** @type {HTMLSelectElement} */ ($("#fit"));
 const spreadCb = /** @type {HTMLInputElement} */ ($("#spread"));
 const directionSel = /** @type {HTMLSelectElement} */ ($("#direction"));
-const seekOverlay = $("#seek-overlay");
+const menuOverlay = $("#menu-overlay");
 const seekBar = /** @type {HTMLInputElement} */ ($("#seek-bar"));
 const pageInput = /** @type {HTMLInputElement} */ ($("#page-input"));
 const seekTotal = $("#seek-total");
-const seekClose = $("#seek-close");
+const menuClose = $("#menu-close");
 const finishBtn = $("#finish-and-close");
 
 const params = new URLSearchParams(location.search);
@@ -165,15 +165,7 @@ function bindEvents() {
     });
   }
 
-  const settingsToggle = document.querySelector("#settings-toggle");
-  const settingsPanel = document.querySelector("#settings-panel");
-  if (settingsToggle && settingsPanel) {
-    settingsToggle.addEventListener("click", () => {
-      const hidden = settingsPanel.hasAttribute("hidden");
-      if (hidden) settingsPanel.removeAttribute("hidden");
-      else settingsPanel.setAttribute("hidden", "");
-    });
-  }
+  // (旧 settings-toggle / settings-panel は menu-overlay に統合済み)
 
   if (finishBtn) {
     finishBtn.addEventListener("click", finishAndClose);
@@ -204,7 +196,7 @@ function bindEvents() {
     const n = Number(pageInput.value) - 1;
     if (Number.isFinite(n)) jumpTo(n, { align: false });
   });
-  seekClose.addEventListener("click", () => hideSeekOverlay());
+  menuClose.addEventListener("click", () => hideMenuOverlay());
 
   document.addEventListener("keydown", (e) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
@@ -230,7 +222,7 @@ function bindEvents() {
         if (totalPages > 0) jumpTo(totalPages - 1);
         break;
       case "Escape":
-        hideSeekOverlay();
+        hideMenuOverlay();
         break;
     }
   });
@@ -382,9 +374,10 @@ function bindTouchAndTap() {
     touchStart = null;
 
     // 水平スワイプ (拡大中は pan に使うのでスキップ)
+    // 右スワイプ (dx > 0) で次へ、 左スワイプで前へ
     if (zoomScale <= 1.05 && absDx > SWIPE_THRESHOLD && absDx > absDy * 1.5) {
       movedSwipe = true;
-      if (dx < 0) moveForward();
+      if (dx > 0) moveForward();
       else moveBackward();
       return;
     }
@@ -398,7 +391,7 @@ function bindTouchAndTap() {
       } else if (xRatio > 0.7) {
         direction === "rtl" ? moveBackward() : moveForward();
       } else {
-        toggleSeekOverlay();
+        toggleMenuOverlay();
       }
     }
   });
@@ -407,7 +400,7 @@ function bindTouchAndTap() {
   // ただし touchend 直後の synthetic click は無視 (モバイルでの二重発火防止)。
   stage.addEventListener("click", (e) => {
     if (performance.now() - lastTouchAt < 500) return;
-    if (e.target instanceof HTMLElement && e.target.closest("button, input, select, .seek-overlay")) return;
+    if (e.target instanceof HTMLElement && e.target.closest("button, input, select, .menu-overlay")) return;
     const rect = stage.getBoundingClientRect();
     const xRatio = (e.clientX - rect.left) / rect.width;
     if (xRatio < 0.3) {
@@ -592,20 +585,19 @@ function applySpreadClass() {
   pagesEl.classList.toggle("spread", spreadCb.checked);
 }
 
-/** ---------- シークオーバーレイ ---------- */
-function toggleSeekOverlay() {
-  if (seekOverlay.hasAttribute("hidden")) showSeekOverlay();
-  else hideSeekOverlay();
+/** ---------- 統合メニューオーバーレイ ---------- */
+function toggleMenuOverlay() {
+  if (menuOverlay.hasAttribute("hidden")) showMenuOverlay();
+  else hideMenuOverlay();
 }
 
-function showSeekOverlay() {
-  if (totalPages <= 0) return;
+function showMenuOverlay() {
   syncSeekUi();
-  seekOverlay.removeAttribute("hidden");
+  menuOverlay.removeAttribute("hidden");
 }
 
-function hideSeekOverlay() {
-  seekOverlay.setAttribute("hidden", "");
+function hideMenuOverlay() {
+  menuOverlay.setAttribute("hidden", "");
 }
 
 function syncSeekUi() {
