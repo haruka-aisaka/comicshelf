@@ -62,6 +62,8 @@ const DOUBLE_TAP_MAX_DIST = 30; // px
 if (!Number.isFinite(bookId)) {
   alert("?book=ID が必要です");
   location.href = "/";
+  // init を走らせない (走らせると fetch('/api/books/NaN') が404になり二重alertが出る)
+  throw new Error("invalid bookId");
 }
 
 init().catch((e) => {
@@ -144,7 +146,12 @@ function prefetchAround(centerPage) {
       if (prefetched.has(p)) continue;
       const img = new Image();
       img.decoding = "async";
+      img.draggable = false;
+      img.alt = `page ${p + 1}`;
       img.src = `/api/books/${bookId}/pages/${p}`;
+      // decode まで進めることで、 render() 時点で bitmap がブラウザキャッシュにあり
+      // 再 decode が走らない (Pi/iPad で WebP の decode コストを抑える)
+      if (typeof img.decode === "function") img.decode().catch(() => {});
       prefetched.set(p, img);
     }
   }
@@ -160,6 +167,8 @@ function bindEvents() {
     applySpreadClass();
     // spread切替時にcurrentPageを揃え直す
     currentPage = clamp(alignToPair(currentPage), 0, Math.max(0, totalPages - 1));
+    // 拡大状態が残っていると単→見開き切替時にレイアウトが崩れるためリセット
+    resetZoom();
     render();
   });
   fitSel.addEventListener("change", () => applyFit());
@@ -403,8 +412,14 @@ function bindTouchAndTap() {
       return;
     }
 
-    // タップ判定 (拡大中も有効)
-    if (!movedSwipe && elapsed < 350 && absDx < 10 && absDy < 10) {
+    // タップ判定 (拡大中も有効)。
+    //   elapsed: 長押し気味でも拾うため 350→750ms に緩和
+    //   target が overlay/button/input/select 内ならスキップ
+    //   (touchend の target は touchstart した要素なので overlay 内のボタンタッチを除外できる)
+    if (!movedSwipe && elapsed < 750 && absDx < 10 && absDy < 10) {
+      if (e.target instanceof HTMLElement && e.target.closest("button, input, select, .menu-overlay")) {
+        return;
+      }
       handleTap(t.clientX, t.clientY);
     }
   });
@@ -629,6 +644,24 @@ function pageIndicesToShow() {
 }
 
 function loadImageDecoded(pageIndex) {
+  // prefetched に既に decode 完了した Image があれば再利用 (二重decode回避)
+  if (prefetched.has(pageIndex)) {
+    const cached = prefetched.get(pageIndex);
+    prefetched.delete(pageIndex);
+    if (cached.complete && cached.naturalWidth > 0) {
+      return Promise.resolve(cached);
+    }
+    // 未完了でも fetch は走っているので、 そのまま待つ
+    return new Promise((resolve) => {
+      const reveal = () => resolve(cached);
+      if (typeof cached.decode === "function") {
+        cached.decode().then(reveal).catch(reveal);
+      } else {
+        cached.addEventListener("load", reveal, { once: true });
+        cached.addEventListener("error", reveal, { once: true });
+      }
+    });
+  }
   return new Promise((resolve) => {
     const img = new Image();
     img.decoding = "async";
@@ -706,6 +739,13 @@ async function saveProgress() {
 }
 
 async function finishAndClose() {
+  // 直前にschedule された saveProgress (finished:false の可能性) があれば
+  // キャンセルしてから finished:true を送る。 そうしないとnavigation中に
+  // 古いタイマーが発火して既読化を上書きする race が起きる。
+  if (saveTimer !== null) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
   // listPages完了前でも操作可能 (totalPages不明時はcurrentPageを保存)
   const last = totalPages > 0 ? totalPages - 1 : currentPage;
   try {

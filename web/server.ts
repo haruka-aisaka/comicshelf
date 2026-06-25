@@ -47,8 +47,8 @@ export function buildApp(opts: {
   return {
     app,
     indexer,
-    close: () => {
-      indexer.stop();
+    close: async () => {
+      await indexer.stop();
       db.close();
     },
   };

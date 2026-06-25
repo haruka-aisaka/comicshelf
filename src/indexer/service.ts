@@ -51,6 +51,8 @@ export class IndexerService {
   private _nextRunAt: number | null = null;
   private _autoTimer: ReturnType<typeof setTimeout> | undefined;
   private _stopped = false;
+  /** 進行中のwarmup全体完了を待つためのPromise (stop時のレース防止用) */
+  private _warmupPromise: Promise<void> | null = null;
   private _warmup: WarmupStatus = {
     running: false,
     total: 0,
@@ -145,20 +147,27 @@ export class IndexerService {
         const i = cursor++;
         if (i >= ids.length) return;
         const bookId = ids[i]!;
+        let didGenerate = false;
         try {
           const result = await this.library.getThumbnail(bookId);
           if (!result) this._warmup.failed++;
+          else if (!result.cacheHit) didGenerate = true;
         } catch {
           this._warmup.failed++;
         }
         this._warmup.done++;
-        // CPU/IOを譲ってメインのHTTP要求が詰まらないようにする
-        await new Promise<void>((r) => setTimeout(r, 80));
+        if (this._stopped) return;
+        // 実際に magick を起動した場合のみ CPU を譲る (cache hit は即次へ)。
+        // これにより既に warmup 済みの環境では sleep がスキップされ起動が速い。
+        if (didGenerate) {
+          await new Promise<void>((r) => setTimeout(r, 80));
+        }
       }
     };
-    await Promise.all(
+    this._warmupPromise = Promise.all(
       Array.from({ length: this.warmupConcurrency }, () => worker()),
-    );
+    ).then(() => undefined);
+    await this._warmupPromise;
 
     this._warmup.running = false;
     this._warmup.finishedAt = this.now();
@@ -204,12 +213,20 @@ export class IndexerService {
     tick();
   }
 
-  stop(): void {
+  /**
+   * 停止処理。 自動timerをキャンセルし、 進行中のwarmupが終わるまで待つ。
+   * これを await することで、 直後の db.close() で warmup worker が
+   * 閉鎖済みDBに触りに行く use-after-close を防ぐ。
+   */
+  async stop(): Promise<void> {
     this._stopped = true;
     if (this._autoTimer !== undefined) {
       clearTimeout(this._autoTimer);
       this._autoTimer = undefined;
     }
     this._nextRunAt = null;
+    if (this._warmupPromise) {
+      await this._warmupPromise.catch(() => {});
+    }
   }
 }

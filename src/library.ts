@@ -97,7 +97,7 @@ export class LibraryService {
    */
   async getThumbnail(
     bookId: number,
-  ): Promise<{ bytes: Uint8Array; contentType: string; mtime: number } | null> {
+  ): Promise<{ bytes: Uint8Array; contentType: string; mtime: number; cacheHit: boolean } | null> {
     const cacheDir = this.thumbnailCacheDir();
     // ヒット: webp優先、 後方互換で原本拡張子もチェック
     for (const ext of THUMB_CACHE_EXTS) {
@@ -108,6 +108,7 @@ export class LibraryService {
           bytes,
           contentType: extToMime(ext),
           mtime: stat.mtime?.getTime() ?? Date.now(),
+          cacheHit: true,
         };
       } catch {
         // continue
@@ -149,10 +150,10 @@ export class LibraryService {
       const cachePath = join(cacheDir, `${bookId}${ext}`);
       await Deno.writeFile(cachePath, bytes);
       const stat = await Deno.stat(cachePath);
-      return { bytes, contentType, mtime: stat.mtime?.getTime() ?? Date.now() };
+      return { bytes, contentType, mtime: stat.mtime?.getTime() ?? Date.now(), cacheHit: false };
     } catch (err) {
       console.warn(`[thumbnail] failed to cache ${bookId}:`, err);
-      return { bytes, contentType, mtime: Date.now() };
+      return { bytes, contentType, mtime: Date.now(), cacheHit: false };
     }
   }
 
@@ -171,8 +172,10 @@ export class LibraryService {
   }
 }
 
-/** サムネキャッシュで使用する拡張子。 .webpを最優先で探す。 */
-const THUMB_CACHE_EXTS = [".webp", ".jpg", ".jpeg", ".png", ".gif", ".avif", ".bmp"];
+/** サムネキャッシュで使用する拡張子。 .webpを最優先で探す。
+   .bin は magick失敗時のfallbackで原本MIMEが不明なケース。
+   invalidateBookCache で確実に削除するため一覧に含める。 */
+const THUMB_CACHE_EXTS = [".webp", ".jpg", ".jpeg", ".png", ".gif", ".avif", ".bmp", ".bin"];
 
 function extToMime(ext: string): string {
   switch (ext) {

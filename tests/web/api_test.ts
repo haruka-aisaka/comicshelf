@@ -47,7 +47,7 @@ async function setupWorld(): Promise<{
     libraryRoot,
     dbPath: tmpDb,
     cleanup: async () => {
-      app.close();
+      await app.close();
       await Deno.remove(libraryRoot, { recursive: true });
       await Deno.remove(tmpDb).catch(() => {});
     },
