@@ -35,12 +35,26 @@
         <option value="ltr">左→右</option>
       </select>
     </label>
+    <button id="finish-and-close" type="button" class="finish-btn">既読にして閉じる</button>
   </div>
 
   <div id="stage" class="stage" tabindex="0">
     <button class="nav-prev" id="prev" aria-label="前のページ">‹</button>
     <div id="pages" class="pages"></div>
     <button class="nav-next" id="next" aria-label="次のページ">›</button>
+
+    <!-- シーク用オーバーレイ (画面中央タップで表示/非表示) -->
+    <div id="seek-overlay" class="seek-overlay" hidden>
+      <div class="seek-row">
+        <input type="range" id="seek-bar" min="0" max="0" value="0" step="1">
+      </div>
+      <div class="seek-row seek-info">
+        <span class="seek-label">ページ</span>
+        <input type="number" id="page-input" min="1" max="1" value="1">
+        <span class="seek-total">/ <span id="seek-total">-</span></span>
+        <button type="button" id="seek-close" class="seek-close" aria-label="閉じる">×</button>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="/viewer.js"></script>

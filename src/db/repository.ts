@@ -87,6 +87,11 @@ export function listAllBookPaths(db: Database): string[] {
   return db.prepare("SELECT path FROM books").all<{ path: string }>().map((r) => r.path);
 }
 
+/** 全ID取得 (サムネwarmup用) */
+export function listAllBookIds(db: Database): number[] {
+  return db.prepare("SELECT id FROM books ORDER BY id").all<{ id: number }>().map((r) => r.id);
+}
+
 /** 一覧取得オプション */
 export interface ListBooksOptions {
   directory?: string;

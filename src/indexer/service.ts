@@ -6,12 +6,29 @@
  */
 import type { Database } from "@db/sqlite";
 import type { Config } from "../types.ts";
+import type { LibraryService } from "../library.ts";
+import { listAllBookIds } from "../db/repository.ts";
 import { type IndexStats, reindex } from "./index.ts";
 
 export interface IndexerRunResult extends IndexStats {
   elapsedMs: number;
   startedAt: number;
   finishedAt: number;
+}
+
+export interface WarmupStatus {
+  /** 実行中か */
+  running: boolean;
+  /** 対象総数 */
+  total: number;
+  /** 処理済み件数 (キャッシュ済みskipも含む) */
+  done: number;
+  /** 失敗件数 */
+  failed: number;
+  /** 開始時刻 (Unix ms) */
+  startedAt: number | null;
+  /** 完了時刻 (Unix ms) */
+  finishedAt: number | null;
 }
 
 export interface IndexerStatus {
@@ -23,6 +40,8 @@ export interface IndexerStatus {
   lastError: string | null;
   /** 次回自動実行予定時刻 (Unix秒)。自動無効ならnull */
   nextRunAt: number | null;
+  /** サムネwarmupの進行状況 */
+  warmup: WarmupStatus;
 }
 
 export class IndexerService {
@@ -32,12 +51,30 @@ export class IndexerService {
   private _nextRunAt: number | null = null;
   private _autoTimer: ReturnType<typeof setTimeout> | undefined;
   private _stopped = false;
+  private _warmup: WarmupStatus = {
+    running: false,
+    total: 0,
+    done: 0,
+    failed: 0,
+    startedAt: null,
+    finishedAt: null,
+  };
+
+  /** サムネ事前生成の並列度 (Pi4でCPU負荷とI/Oのバランス) */
+  private readonly warmupConcurrency: number;
+  private readonly now: () => number;
 
   constructor(
     private readonly db: Database,
     private readonly config: Config,
-    private readonly now: () => number = () => Date.now(),
-  ) {}
+    private readonly library: LibraryService,
+    options: { warmupConcurrency?: number; now?: () => number } = {},
+  ) {
+    // Pi4の4コアでmagickがCPU 100%食うのを考慮し並列度3が安全圏。
+    // これ以上だと並行HTTPリクエストが詰まり、 一覧画面の操作が止まる。
+    this.warmupConcurrency = options.warmupConcurrency ?? 3;
+    this.now = options.now ?? (() => Date.now());
+  }
 
   get status(): IndexerStatus {
     return {
@@ -45,12 +82,16 @@ export class IndexerService {
       lastResult: this._lastResult,
       lastError: this._lastError,
       nextRunAt: this._nextRunAt,
+      warmup: { ...this._warmup },
     };
   }
 
   /**
    * 1回だけインデックスを実行する。
    * 既に実行中なら null を返す (待たない)。
+   *
+   * reindex完了後、 サムネWebPキャッシュの事前生成を裏で開始する。
+   * 既にキャッシュ済みのものは即座にスキップされるため低コスト。
    */
   async runOnce(): Promise<IndexerRunResult | null> {
     if (this._running) return null;
@@ -71,6 +112,8 @@ export class IndexerService {
       };
       this._lastResult = result;
       this._lastError = null;
+      // サムネwarmupは別タスクとして裏で実行 (戻り値は待たない)
+      this.startWarmup().catch((e) => console.error("[warmup] failed:", e));
       return result;
     } catch (err) {
       this._lastError = err instanceof Error ? err.message : String(err);
@@ -78,6 +121,53 @@ export class IndexerService {
     } finally {
       this._running = false;
     }
+  }
+
+  /**
+   * サムネキャッシュの並列warmup。
+   * 既にwarmup実行中なら何もしない。
+   */
+  private async startWarmup(): Promise<void> {
+    if (this._warmup.running) return;
+    const ids = listAllBookIds(this.db);
+    this._warmup = {
+      running: true,
+      total: ids.length,
+      done: 0,
+      failed: 0,
+      startedAt: this.now(),
+      finishedAt: null,
+    };
+    console.log(`[warmup] thumbnails: ${ids.length} books, concurrency=${this.warmupConcurrency}`);
+
+    let cursor = 0;
+    const worker = async () => {
+      while (!this._stopped) {
+        const i = cursor++;
+        if (i >= ids.length) return;
+        const bookId = ids[i]!;
+        try {
+          const result = await this.library.getThumbnail(bookId);
+          if (!result) this._warmup.failed++;
+        } catch {
+          this._warmup.failed++;
+        }
+        this._warmup.done++;
+        // CPU/IOを譲ってメインのHTTP要求が詰まらないようにする
+        await new Promise<void>((r) => setTimeout(r, 30));
+      }
+    };
+    await Promise.all(
+      Array.from({ length: this.warmupConcurrency }, () => worker()),
+    );
+
+    this._warmup.running = false;
+    this._warmup.finishedAt = this.now();
+    const elapsed = (this._warmup.finishedAt! - this._warmup.startedAt!) / 1000;
+    console.log(
+      `[warmup] thumbnails done: ${this._warmup.done}/${ids.length} ` +
+        `(failed=${this._warmup.failed}) in ${elapsed.toFixed(1)}s`,
+    );
   }
 
   /**

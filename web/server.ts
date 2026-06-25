@@ -14,7 +14,7 @@ export function buildApp(opts: {
   const config = opts.config;
   const db = openDatabase(opts.dbPath ?? config.database.path);
   const library = new LibraryService(db, config);
-  const indexer = new IndexerService(db, config);
+  const indexer = new IndexerService(db, config, library);
   const app = new Hono();
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));

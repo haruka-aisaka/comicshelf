@@ -10,6 +10,7 @@ const lastUpserted = $("#last-upserted");
 const lastRemoved = $("#last-removed");
 const lastElapsed = $("#last-elapsed");
 const nextRun = $("#next-run");
+const warmupProgress = $("#warmup-progress");
 const libraryRoots = $("#library-roots");
 const watchInterval = $("#watch-interval");
 const defaultDirection = /** @type {HTMLSelectElement} */ ($("#default-direction"));
@@ -61,6 +62,9 @@ async function loadConfig() {
   }
 }
 
+/** @type {number | undefined} warmup進捗 polling timer */
+let pollTimer;
+
 async function loadStatus() {
   try {
     const res = await fetch("/api/index/status");
@@ -77,6 +81,28 @@ async function loadStatus() {
       nextRun.textContent = data.running ? "実行中" : "—";
     }
     if (data.running) setStatus("バックグラウンドで実行中");
+
+    if (data.warmup) {
+      const w = data.warmup;
+      if (w.running) {
+        warmupProgress.textContent = `${w.done} / ${w.total} (失敗 ${w.failed})`;
+        // 実行中は1秒ごとにポーリング
+        if (pollTimer === undefined) {
+          pollTimer = setInterval(loadStatus, 1000);
+        }
+      } else if (w.total > 0) {
+        const elapsed = w.finishedAt && w.startedAt
+          ? ((w.finishedAt - w.startedAt) / 1000).toFixed(1)
+          : "—";
+        warmupProgress.textContent = `完了 ${w.done} / ${w.total} (失敗 ${w.failed}, ${elapsed}s)`;
+        if (pollTimer !== undefined) {
+          clearInterval(pollTimer);
+          pollTimer = undefined;
+        }
+      } else {
+        warmupProgress.textContent = "—";
+      }
+    }
   } catch (e) {
     console.warn("status取得失敗", e);
   }

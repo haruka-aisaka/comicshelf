@@ -1,11 +1,19 @@
 // @ts-check
 /**
  * comicshelf ビューワー。
- *  クエリパラメータ: ?book=ID&page=N
- *  - キー操作: ← → Space で前後ページ、Home/End で先頭/末尾
- *  - 見開きトグル、フィット切替、読書方向 (RTL/LTR)
- *  - スワイプ/タップで前後ページ送り
- *  - ページ移動ごとに /api/books/:id/progress に保存
+ *
+ *  クエリ: ?book=ID&page=N
+ *  キー: ← → Space / Home End
+ *  タッチ:
+ *    - 左30% タップ: RTLは次、LTRは前
+ *    - 右30% タップ: RTLは前、LTRは次
+ *    - 中央タップ: シークオーバーレイの開閉
+ *    - 水平スワイプ: 左→次、右→前 (scale=1の時のみ)
+ *    - 2フィンガーピンチ: 拡大 (1..5x)、 拡大中の1フィンガードラッグでpan
+ *  操作:
+ *    - 見開き: 表紙は単独、 page 1-2, 3-4 ... がペア
+ *    - ページ移動で拡大率は自動でリセット
+ *    - 既読にして閉じる: progress送信→ホームへ
  */
 
 const $ = (sel) => /** @type {HTMLElement} */ (document.querySelector(sel));
@@ -18,6 +26,12 @@ const nextBtn = $("#next");
 const fitSel = /** @type {HTMLSelectElement} */ ($("#fit"));
 const spreadCb = /** @type {HTMLInputElement} */ ($("#spread"));
 const directionSel = /** @type {HTMLSelectElement} */ ($("#direction"));
+const seekOverlay = $("#seek-overlay");
+const seekBar = /** @type {HTMLInputElement} */ ($("#seek-bar"));
+const pageInput = /** @type {HTMLInputElement} */ ($("#page-input"));
+const seekTotal = $("#seek-total");
+const seekClose = $("#seek-close");
+const finishBtn = $("#finish-and-close");
 
 const params = new URLSearchParams(location.search);
 const bookId = Number(params.get("book"));
@@ -26,13 +40,16 @@ let totalPages = -1;
 let saveTimer = null;
 let pagesReady = null;
 
-/** プリフェッチ済みページのImage保持 (GC回避) */
 const prefetched = new Map();
 const PREFETCH_RADIUS = 2;
 
-/** 読書方向。'rtl' = 漫画 (右→左、デフォルト), 'ltr' = 左→右 */
 const DIRECTION_KEY = "comicshelf.direction";
 let direction = localStorage.getItem(DIRECTION_KEY) ?? "rtl";
+
+/** ピンチ拡大state */
+let zoomScale = 1;
+let zoomTx = 0;
+let zoomTy = 0;
 
 if (!Number.isFinite(bookId)) {
   alert("?book=ID が必要です");
@@ -47,6 +64,7 @@ init().catch((e) => {
 async function init() {
   applyFit();
   applyDirection();
+  applySpreadClass();
   showInitialThumbnail();
   indicator.textContent = `${currentPage + 1} / …`;
 
@@ -74,7 +92,11 @@ async function init() {
 
   pagesReady.then((pagesData) => {
     totalPages = pagesData.pages.length;
-    currentPage = clamp(currentPage, 0, Math.max(0, totalPages - 1));
+    currentPage = clamp(alignToPair(currentPage), 0, Math.max(0, totalPages - 1));
+    seekBar.max = String(Math.max(0, totalPages - 1));
+    pageInput.max = String(totalPages);
+    seekTotal.textContent = String(totalPages);
+    syncSeekUi();
     if (currentPage !== 0 || pagesEl.querySelector("img[data-from-thumb='1']")) {
       render();
     }
@@ -95,7 +117,6 @@ function showInitialThumbnail() {
   img.dataset.fromThumb = "1";
   img.src = `/api/books/${bookId}/thumbnail`;
   const reveal = () => {
-    // render() が先に走ってDOMを差し替えた場合 (renderGeneration > 0) は破棄
     if (renderGeneration !== 0) return;
     pagesEl.replaceChildren(img);
   };
@@ -120,17 +141,19 @@ function prefetchAround(centerPage) {
     }
   }
   for (const p of Array.from(prefetched.keys())) {
-    if (Math.abs(p - centerPage) > PREFETCH_RADIUS * 2) {
-      prefetched.delete(p);
-    }
+    if (Math.abs(p - centerPage) > PREFETCH_RADIUS * 2) prefetched.delete(p);
   }
 }
 
 function bindEvents() {
-  // ナビボタン: prev/next は論理 (前/次)。 表示位置はCSS側でdirを反転
   prevBtn.addEventListener("click", () => moveBackward());
   nextBtn.addEventListener("click", () => moveForward());
-  spreadCb.addEventListener("change", () => render());
+  spreadCb.addEventListener("change", () => {
+    applySpreadClass();
+    // spread切替時にcurrentPageを揃え直す
+    currentPage = clamp(alignToPair(currentPage), 0, Math.max(0, totalPages - 1));
+    render();
+  });
   fitSel.addEventListener("change", () => applyFit());
   if (directionSel) {
     directionSel.value = direction;
@@ -152,10 +175,20 @@ function bindEvents() {
     });
   }
 
+  if (finishBtn) {
+    finishBtn.addEventListener("click", finishAndClose);
+  }
+
+  // シーク
+  seekBar.addEventListener("input", () => jumpTo(Number(seekBar.value)));
+  pageInput.addEventListener("change", () => {
+    const n = Number(pageInput.value) - 1;
+    if (Number.isFinite(n)) jumpTo(n);
+  });
+  seekClose.addEventListener("click", () => hideSeekOverlay());
+
   document.addEventListener("keydown", (e) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-    // 矢印キーは「画面上の方向」 = 視覚的にどちらに進むか。
-    // RTL (漫画) では右が「前」、左が「次」
     switch (e.key) {
       case "ArrowLeft":
       case "PageUp":
@@ -177,121 +210,255 @@ function bindEvents() {
       case "End":
         if (totalPages > 0) jumpTo(totalPages - 1);
         break;
+      case "Escape":
+        hideSeekOverlay();
+        break;
     }
   });
 
-  // タッチ: スワイプ + タップ。RTLでは左スワイプ=次、右スワイプ=前
-  const stageEl = document.querySelector("#stage");
+  bindTouchAndTap();
+}
+
+/** ---------- タッチ/タップ/ピンチ ---------- */
+function bindTouchAndTap() {
   /** @type {{x: number, y: number, t: number} | null} */
   let touchStart = null;
-  let moved = false;
-  const SWIPE_THRESHOLD = 50; // px
+  /** @type {{dist: number, startScale: number, cx: number, cy: number} | null} */
+  let pinch = null;
+  /** @type {{x: number, y: number, baseTx: number, baseTy: number} | null} */
+  let pan = null;
+  let movedSwipe = false;
+  /** touchend直後の synthetic click を抑制するためのタイムスタンプ */
+  let lastTouchAt = 0;
+  const SWIPE_THRESHOLD = 50;
 
-  stageEl.addEventListener("touchstart", (e) => {
-    if (e.touches.length !== 1) {
+  stage.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 2) {
+      // pinch開始
+      const [a, b] = [e.touches[0], e.touches[1]];
+      pinch = {
+        dist: touchDistance(a, b),
+        startScale: zoomScale,
+        cx: (a.clientX + b.clientX) / 2,
+        cy: (a.clientY + b.clientY) / 2,
+      };
       touchStart = null;
+      pan = null;
+      e.preventDefault();
+    } else if (e.touches.length === 1) {
+      const t = e.touches[0];
+      if (zoomScale > 1.05) {
+        // 拡大中: pan開始
+        pan = { x: t.clientX, y: t.clientY, baseTx: zoomTx, baseTy: zoomTy };
+        touchStart = null;
+      } else {
+        // スワイプ/タップ判定用
+        touchStart = { x: t.clientX, y: t.clientY, t: performance.now() };
+        movedSwipe = false;
+      }
+    }
+  }, { passive: false });
+
+  stage.addEventListener("touchmove", (e) => {
+    if (pinch && e.touches.length === 2) {
+      const [a, b] = [e.touches[0], e.touches[1]];
+      const newDist = touchDistance(a, b);
+      zoomScale = clamp(pinch.startScale * (newDist / pinch.dist), 1, 5);
+      // scaleが1に戻ったらtranslateもリセット
+      if (zoomScale <= 1.01) {
+        zoomScale = 1;
+        zoomTx = 0;
+        zoomTy = 0;
+      }
+      applyZoom();
+      e.preventDefault();
+    } else if (pan && e.touches.length === 1) {
+      const t = e.touches[0];
+      zoomTx = pan.baseTx + (t.clientX - pan.x);
+      zoomTy = pan.baseTy + (t.clientY - pan.y);
+      applyZoom();
+      e.preventDefault();
+    } else if (touchStart && e.touches.length === 1) {
+      const t = e.touches[0];
+      const dx = t.clientX - touchStart.x;
+      const dy = t.clientY - touchStart.y;
+      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) movedSwipe = true;
+    }
+  }, { passive: false });
+
+  stage.addEventListener("touchend", (e) => {
+    lastTouchAt = performance.now();
+    if (pinch && e.touches.length < 2) pinch = null;
+    if (pan && e.touches.length === 0) {
+      pan = null;
       return;
     }
-    const t = e.touches[0];
-    touchStart = { x: t.clientX, y: t.clientY, t: performance.now() };
-    moved = false;
-  }, { passive: true });
-
-  stageEl.addEventListener("touchmove", (e) => {
-    if (!touchStart || e.touches.length !== 1) return;
-    const t = e.touches[0];
-    const dx = t.clientX - touchStart.x;
-    const dy = t.clientY - touchStart.y;
-    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) moved = true;
-  }, { passive: true });
-
-  stageEl.addEventListener("touchend", (e) => {
     if (!touchStart) return;
     const t = e.changedTouches[0];
     const dx = t.clientX - touchStart.x;
     const dy = t.clientY - touchStart.y;
     const absDx = Math.abs(dx);
     const absDy = Math.abs(dy);
+    const elapsed = performance.now() - touchStart.t;
     touchStart = null;
 
-    // 水平スワイプ (vertical成分より大きく、閾値超え)
-    if (absDx > SWIPE_THRESHOLD && absDx > absDy * 1.5) {
-      moved = true;
-      if (dx < 0) {
-        // 左へスワイプ → RTLでは「次」、 LTRでは「次」
-        // (どちらでも「コンテンツを左に流す」=次へ進む)
-        direction === "rtl" ? moveForward() : moveForward();
-      } else {
-        // 右へスワイプ → 前
-        moveBackward();
-      }
-    }
-  }, { passive: true });
+    if (zoomScale > 1.05) return; // 拡大中は遷移しない
 
-  // clickイベント (タップ/マウスクリック): スワイプ判定後ならスキップ
-  stageEl.addEventListener("click", (e) => {
-    if (moved) {
-      moved = false;
+    // 水平スワイプ
+    if (absDx > SWIPE_THRESHOLD && absDx > absDy * 1.5) {
+      movedSwipe = true;
+      if (dx < 0) moveForward();
+      else moveBackward();
       return;
     }
-    const target = e.target;
-    if (target.closest("button")) return;
-    const rect = stageEl.getBoundingClientRect();
-    const xRatio = (e.clientX - rect.left) / rect.width;
-    if (xRatio < 0.3) {
-      // 左タップ: RTLでは次、LTRでは前
-      direction === "rtl" ? moveForward() : moveBackward();
-    } else if (xRatio > 0.7) {
-      // 右タップ: RTLでは前、LTRでは次
-      direction === "rtl" ? moveBackward() : moveForward();
+
+    // タップ判定 (短時間、移動少ない)
+    if (!movedSwipe && elapsed < 350 && absDx < 10 && absDy < 10) {
+      const rect = stage.getBoundingClientRect();
+      const xRatio = (t.clientX - rect.left) / rect.width;
+      if (xRatio < 0.3) {
+        direction === "rtl" ? moveForward() : moveBackward();
+      } else if (xRatio > 0.7) {
+        direction === "rtl" ? moveBackward() : moveForward();
+      } else {
+        toggleSeekOverlay();
+      }
     }
   });
+
+  // マウスクリック (デスクトップ) も同等のゾーン判定。
+  // ただし touchend 直後の synthetic click は無視 (モバイルでの二重発火防止)。
+  stage.addEventListener("click", (e) => {
+    if (performance.now() - lastTouchAt < 500) return;
+    if (e.target instanceof HTMLElement && e.target.closest("button, input, select, .seek-overlay")) return;
+    if (zoomScale > 1.05) return;
+    const rect = stage.getBoundingClientRect();
+    const xRatio = (e.clientX - rect.left) / rect.width;
+    if (xRatio < 0.3) {
+      direction === "rtl" ? moveForward() : moveBackward();
+    } else if (xRatio > 0.7) {
+      direction === "rtl" ? moveBackward() : moveForward();
+    } else {
+      toggleSeekOverlay();
+    }
+  });
+
+  // PC: Ctrl+ホイールで拡大
+  stage.addEventListener("wheel", (e) => {
+    if (!e.ctrlKey) return;
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    zoomScale = clamp(zoomScale + delta, 1, 5);
+    if (zoomScale <= 1.01) {
+      zoomScale = 1;
+      zoomTx = 0;
+      zoomTy = 0;
+    }
+    applyZoom();
+    e.preventDefault();
+  }, { passive: false });
 }
 
-function moveForward() { jumpTo(currentPage + step(1)); }
-function moveBackward() { jumpTo(currentPage - step(1)); }
-function step(d) { return spreadCb.checked && d !== 0 ? d * 2 : d; }
+function touchDistance(a, b) {
+  const dx = a.clientX - b.clientX;
+  const dy = a.clientY - b.clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function applyZoom() {
+  pagesEl.style.transform = `translate(${zoomTx}px, ${zoomTy}px) scale(${zoomScale})`;
+}
+
+function resetZoom() {
+  zoomScale = 1;
+  zoomTx = 0;
+  zoomTy = 0;
+  applyZoom();
+}
+
+/** ---------- ページ移動 ---------- */
+function moveForward() {
+  if (!spreadCb.checked) {
+    jumpTo(currentPage + 1);
+    return;
+  }
+  // spread: 表紙(0) → 1、 ペアの右(奇数) → +2
+  if (currentPage === 0) jumpTo(1);
+  else jumpTo(currentPage + 2);
+}
+
+function moveBackward() {
+  if (!spreadCb.checked) {
+    jumpTo(currentPage - 1);
+    return;
+  }
+  if (currentPage <= 1) jumpTo(0);
+  else jumpTo(currentPage - 2);
+}
+
+/**
+ * 任意指定のページ番号を、 spread モードならペア境界に揃える。
+ * - 表紙 (page 0) は単独
+ * - page 1-2 / 3-4 / 5-6 ... がペア (右ページ = 奇数 0-indexed)
+ */
+function alignToPair(n) {
+  if (!spreadCb.checked) return n;
+  if (n <= 0) return 0;
+  return n % 2 === 0 ? n - 1 : n;
+}
 
 function jumpTo(n) {
   const upper = totalPages > 0 ? totalPages - 1 : currentPage;
-  const next = clamp(n, 0, upper);
-  if (next === currentPage) return;
+  const next = clamp(alignToPair(n), 0, upper);
+  if (next === currentPage) {
+    syncSeekUi();
+    return;
+  }
   currentPage = next;
+  resetZoom();
   render();
   scheduleSave();
   prefetchAround(currentPage);
+  syncSeekUi();
 }
 
-/** 描画リクエストの世代カウンタ。古い render の応答が新しい描画を上書きしないように。 */
+/** ---------- 描画 ---------- */
 let renderGeneration = 0;
 
 function render() {
   const gen = ++renderGeneration;
-  const upper = totalPages > 0 ? totalPages : currentPage + 1;
-  const indices = spreadCb.checked && currentPage + 1 < upper
-    ? [currentPage, currentPage + 1]
-    : [currentPage];
+  const indices = pageIndicesToShow();
 
-  // 全ページを Image() でfetch + decode してから一括差し替え。
-  // iOS Safari がdecode途中で部分bitmapを表示する (大きいWebPで下半分が紫破損する等)
-  // のを防ぐため、 必ず decode完了後にDOMへappendする。
-  // 古い画像はdecode完了までDOMに残るのでページ切替時のブランクが減る。
   Promise.all(indices.map((i) => loadImageDecoded(i))).then((imgs) => {
-    if (gen !== renderGeneration) return; // 別ページに移動済み
+    if (gen !== renderGeneration) return;
     pagesEl.replaceChildren(...imgs);
   }).catch((e) => {
     console.warn("page render failed", e);
   });
 
   const totalLabel = totalPages > 0 ? totalPages : "…";
-  indicator.textContent = `${currentPage + 1}${
-    indices.length === 2 ? "-" + (currentPage + 2) : ""
-  } / ${totalLabel}`;
+  const lastIdx = indices[indices.length - 1];
+  indicator.textContent = indices.length === 2
+    ? `${indices[0] + 1}-${lastIdx + 1} / ${totalLabel}`
+    : `${indices[0] + 1} / ${totalLabel}`;
   const qs = new URLSearchParams({ book: String(bookId), page: String(currentPage) });
   history.replaceState(null, "", `?${qs}`);
 }
 
-/** ページ画像をfetch + decode完了まで待って Image を返す */
+/**
+ * 現在表示すべきページ番号の配列。
+ * spread モード時:
+ *   - 表紙 (0) は単独
+ *   - currentPage が右ページ (奇数 0-indexed) なら [currentPage, currentPage+1]
+ *   - 末尾でcurrentPage+1 が範囲外なら単独
+ */
+function pageIndicesToShow() {
+  if (!spreadCb.checked) return [currentPage];
+  if (currentPage === 0) return [0];
+  const upper = totalPages > 0 ? totalPages : currentPage + 2;
+  if (currentPage + 1 < upper) return [currentPage, currentPage + 1];
+  return [currentPage];
+}
+
 function loadImageDecoded(pageIndex) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -308,6 +475,7 @@ function loadImageDecoded(pageIndex) {
   });
 }
 
+/** ---------- 各種状態適用 ---------- */
 function applyFit() {
   pagesEl.classList.remove("fit-width", "fit-height", "fit-contain");
   pagesEl.classList.add(`fit-${fitSel.value}`);
@@ -316,10 +484,37 @@ function applyFit() {
 function applyDirection() {
   pagesEl.classList.toggle("dir-rtl", direction === "rtl");
   pagesEl.classList.toggle("dir-ltr", direction !== "rtl");
-  // ナビボタンの視覚位置も入れ替え (RTLでは < が右、 > が左)
   stage.classList.toggle("dir-rtl", direction === "rtl");
 }
 
+function applySpreadClass() {
+  pagesEl.classList.toggle("spread", spreadCb.checked);
+}
+
+/** ---------- シークオーバーレイ ---------- */
+function toggleSeekOverlay() {
+  if (seekOverlay.hasAttribute("hidden")) showSeekOverlay();
+  else hideSeekOverlay();
+}
+
+function showSeekOverlay() {
+  if (totalPages <= 0) return;
+  syncSeekUi();
+  seekOverlay.removeAttribute("hidden");
+}
+
+function hideSeekOverlay() {
+  seekOverlay.setAttribute("hidden", "");
+}
+
+function syncSeekUi() {
+  if (totalPages > 0) {
+    seekBar.value = String(currentPage);
+    pageInput.value = String(currentPage + 1);
+  }
+}
+
+/** ---------- 進捗 ---------- */
 function scheduleSave() {
   if (saveTimer !== null) clearTimeout(saveTimer);
   saveTimer = setTimeout(saveProgress, 500);
@@ -336,6 +531,21 @@ async function saveProgress() {
   } catch (e) {
     console.warn("既読保存に失敗", e);
   }
+}
+
+async function finishAndClose() {
+  // listPages完了前でも操作可能 (totalPages不明時はcurrentPageを保存)
+  const last = totalPages > 0 ? totalPages - 1 : currentPage;
+  try {
+    await fetch(`/api/books/${bookId}/progress`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ lastPage: last, finished: true }),
+    });
+  } catch (e) {
+    console.warn("既読化失敗", e);
+  }
+  location.href = "/";
 }
 
 function clamp(n, lo, hi) {
