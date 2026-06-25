@@ -6,7 +6,10 @@ import {
   getReadState,
   listAllBookPaths,
   listBooks,
+  listContinueReading,
   listDirectories,
+  listRecentlyAdded,
+  listRecentlyFinished,
   updatePageCount,
   upsertBook,
   upsertReadState,
@@ -204,6 +207,35 @@ Deno.test("listBooks: statusフィルタ (unread/reading/finished/not_finished)"
   assertEquals(titlesOf("not_finished"), ["A未着手", "B読書中", "D未着手2"]);
   // a を参照だけ (lint)
   assertEquals(a.title, "A未着手");
+});
+
+Deno.test("listContinueReading / listRecentlyFinished / listRecentlyAdded", () => {
+  const db = openDatabase(":memory:");
+  const a = upsertBook(db, makeBook({ path: "a.cbz", title: "A" }), 100);
+  const b = upsertBook(db, makeBook({ path: "b.cbz", title: "B" }), 200);
+  const c = upsertBook(db, makeBook({ path: "c.cbz", title: "C" }), 300);
+  const d = upsertBook(db, makeBook({ path: "d.cbz", title: "D" }), 400);
+
+  // A: 読書中 (lastPage > 0, finished=false)
+  upsertReadState(db, a.id, { lastPage: 5, finished: false }, 1000);
+  // B: 読了
+  upsertReadState(db, b.id, { lastPage: 50, finished: true }, 2000);
+  // C: lastPage=0 で着手扱い外
+  upsertReadState(db, c.id, { lastPage: 0, finished: false }, 3000);
+  // D: read_state なし
+
+  const cont = listContinueReading(db, 10).map((x) => x.title);
+  assertEquals(cont, ["A"]);
+
+  const fin = listRecentlyFinished(db, 10).map((x) => x.title);
+  assertEquals(fin, ["B"]);
+
+  const added = listRecentlyAdded(db, 10).map((x) => x.title);
+  // addedAt 降順
+  assertEquals(added, ["D", "C", "B", "A"]);
+
+  // limit が効く
+  assertEquals(listRecentlyAdded(db, 2).map((x) => x.title), ["D", "C"]);
 });
 
 Deno.test("ON DELETE CASCADE: 書籍削除でread_stateも消える", () => {

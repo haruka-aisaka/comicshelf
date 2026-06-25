@@ -6,7 +6,10 @@ import {
   getBookById,
   getReadState,
   listBooks,
+  listContinueReading,
   listDirectories,
+  listRecentlyAdded,
+  listRecentlyFinished,
   upsertReadState,
 } from "../../src/db/repository.ts";
 
@@ -49,6 +52,15 @@ export function buildBooksRoutes(deps: BooksDeps): Hono {
 
   app.get("/directories", (c) => {
     return c.json({ directories: listDirectories(deps.db) });
+  });
+
+  app.get("/books/sections", (c) => {
+    const limit = Math.max(1, Math.min(50, parseIntOr(c.req.query("limit"), 10)));
+    return c.json({
+      continueReading: listContinueReading(deps.db, limit),
+      recentlyFinished: listRecentlyFinished(deps.db, limit),
+      recentlyAdded: listRecentlyAdded(deps.db, limit),
+    });
   });
 
   app.get("/books/:id", (c) => {

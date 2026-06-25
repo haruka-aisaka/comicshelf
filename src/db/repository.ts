@@ -211,6 +211,59 @@ function sortKeyToOrderBy(key: SortKey): string {
   }
 }
 
+/**
+ * 「続きから」: 読書中 (lastPage > 0, finished = 0) を read_states.updated_at DESC で。
+ */
+export function listContinueReading(db: Database, limit: number): BookWithReadState[] {
+  const sql = `
+    SELECT b.*,
+      r.last_page  AS rs_last_page,
+      r.finished   AS rs_finished,
+      r.updated_at AS rs_updated_at
+    FROM books b
+    INNER JOIN read_states r ON r.book_id = b.id
+    WHERE r.last_page > 0 AND r.finished = 0
+    ORDER BY r.updated_at DESC
+    LIMIT ?
+  `;
+  return db.prepare(sql).all<BookRowWithRead>(limit).map(rowToBookWithRead);
+}
+
+/**
+ * 「最近読んだ」: 読了済み (finished = 1) を read_states.updated_at DESC で。
+ */
+export function listRecentlyFinished(db: Database, limit: number): BookWithReadState[] {
+  const sql = `
+    SELECT b.*,
+      r.last_page  AS rs_last_page,
+      r.finished   AS rs_finished,
+      r.updated_at AS rs_updated_at
+    FROM books b
+    INNER JOIN read_states r ON r.book_id = b.id
+    WHERE r.finished = 1
+    ORDER BY r.updated_at DESC
+    LIMIT ?
+  `;
+  return db.prepare(sql).all<BookRowWithRead>(limit).map(rowToBookWithRead);
+}
+
+/**
+ * 「最近追加した」: books.added_at DESC。 read_state がない場合も含む。
+ */
+export function listRecentlyAdded(db: Database, limit: number): BookWithReadState[] {
+  const sql = `
+    SELECT b.*,
+      r.last_page  AS rs_last_page,
+      r.finished   AS rs_finished,
+      r.updated_at AS rs_updated_at
+    FROM books b
+    LEFT JOIN read_states r ON r.book_id = b.id
+    ORDER BY b.added_at DESC
+    LIMIT ?
+  `;
+  return db.prepare(sql).all<BookRowWithRead>(limit).map(rowToBookWithRead);
+}
+
 /** 全ディレクトリの一覧 (重複排除済み, 書籍件数つき) */
 export interface DirectorySummary {
   directory: string;

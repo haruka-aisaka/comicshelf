@@ -33,6 +33,7 @@ if (filterSel) {
     state.status = filterSel.value;
     writeQuery();
     loadBooks();
+    loadSections();
   });
 }
 
@@ -47,12 +48,61 @@ if (searchInput) {
       state.query = next;
       writeQuery();
       loadBooks();
+      loadSections();
     }, 200);
   });
 }
 
 async function refresh() {
-  await Promise.all([loadDirectories(), loadBooks()]);
+  await Promise.all([loadDirectories(), loadBooks(), loadSections()]);
+}
+
+async function loadSections() {
+  const container = /** @type {HTMLElement|null} */ (document.querySelector("#sections"));
+  if (!container) return;
+  // セクションは「フィルタ無し」 (= 検索/ディレクトリ絞り込みなし) のときだけ表示。
+  // 何らかの絞り込みがあると認知負荷が増えるので非表示にする。
+  const hasFilter = state.directory !== "" || state.query !== "" || state.status !== "all";
+  if (hasFilter) {
+    container.hidden = true;
+    return;
+  }
+  try {
+    const res = await fetch("/api/books/sections?limit=12");
+    if (!res.ok) {
+      container.hidden = true;
+      return;
+    }
+    const data = await res.json();
+    /** @type {Record<string, Array<any>>} */
+    const sections = {
+      continueReading: data.continueReading,
+      recentlyAdded: data.recentlyAdded,
+      recentlyFinished: data.recentlyFinished,
+    };
+    let anyShown = false;
+    for (const [key, books] of Object.entries(sections)) {
+      const sectionEl = /** @type {HTMLElement|null} */ (
+        container.querySelector(`[data-section="${key}"]`)
+      );
+      if (!sectionEl) continue;
+      const row = /** @type {HTMLElement|null} */ (sectionEl.querySelector(".section-row"));
+      if (!row) continue;
+      row.innerHTML = "";
+      if (!books || books.length === 0) {
+        sectionEl.hidden = true;
+        continue;
+      }
+      for (const book of books) {
+        row.appendChild(makeCard(book));
+      }
+      sectionEl.hidden = false;
+      anyShown = true;
+    }
+    container.hidden = !anyShown;
+  } catch {
+    container.hidden = true;
+  }
 }
 
 async function loadDirectories() {
@@ -179,6 +229,7 @@ function makeDirLinkAnchor(value, label, count) {
     document.querySelectorAll(".dir-link").forEach((el) => el.classList.remove("active"));
     a.classList.add("active");
     loadBooks();
+    loadSections();
   });
   return a;
 }
@@ -230,6 +281,7 @@ if (clearFiltersBtn) {
     if (allLink) allLink.classList.add("active");
     writeQuery();
     loadBooks();
+    loadSections();
   });
 }
 
