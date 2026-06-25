@@ -55,6 +55,19 @@ if (searchInput) {
 
 async function refresh() {
   await Promise.all([loadDirectories(), loadBooks(), loadSections()]);
+  restoreScroll();
+}
+
+function restoreScroll() {
+  const raw = sessionStorage.getItem(SCROLL_KEY);
+  if (raw === null) return;
+  const y = Number(raw);
+  sessionStorage.removeItem(SCROLL_KEY);
+  if (!Number.isFinite(y) || y <= 0) return;
+  // レイアウトと画像 lazy-load が確定する次フレームで復元
+  requestAnimationFrame(() => {
+    window.scrollTo({ top: y, behavior: "instant" });
+  });
 }
 
 async function loadSections() {
@@ -285,11 +298,14 @@ if (clearFiltersBtn) {
   });
 }
 
+const SCROLL_KEY = "comicshelf.listScrollY";
+
 function makeCard(book) {
   const card = document.createElement("div");
   card.className = "card";
   card.dataset.id = String(book.id);
   card.addEventListener("click", () => {
+    sessionStorage.setItem(SCROLL_KEY, String(window.scrollY));
     location.href = `/viewer.html?book=${book.id}`;
   });
 
