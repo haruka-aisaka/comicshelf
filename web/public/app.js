@@ -8,6 +8,8 @@
 const $ = (sel) => /** @type {HTMLElement} */ (document.querySelector(sel));
 const grid = $("#grid");
 const empty = $("#empty");
+const emptyText = $("#empty-text");
+const clearFiltersBtn = /** @type {HTMLButtonElement|null} */ (document.querySelector("#clear-filters"));
 const sortSel = /** @type {HTMLSelectElement} */ ($("#sort"));
 const filterSel = /** @type {HTMLSelectElement} */ ($("#status-filter"));
 const searchInput = /** @type {HTMLInputElement|null} */ (document.querySelector("#search"));
@@ -102,10 +104,43 @@ async function loadBooks() {
   /** @type {Array<{id: number, title: string, pageCount: number | null, readState: {lastPage: number, finished: boolean} | null}>} */
   const books = data.books;
   grid.innerHTML = "";
-  empty.hidden = books.length > 0;
+  if (books.length > 0) {
+    empty.hidden = true;
+  } else {
+    await renderEmptyState();
+  }
   for (const book of books) {
     grid.appendChild(makeCard(book));
   }
+}
+
+async function renderEmptyState() {
+  const hasActiveFilter = state.directory !== "" || state.status !== "all" || state.query !== "";
+  if (hasActiveFilter) {
+    emptyText.textContent = "条件に一致する書籍がありません。";
+    if (clearFiltersBtn) clearFiltersBtn.hidden = false;
+  } else {
+    // フィルタなしで0件 = ライブラリが実際に空 (or インデックス未実行)
+    emptyText.textContent =
+      "ライブラリに書籍がありません。設定画面から再インデックスを実行してください。";
+    if (clearFiltersBtn) clearFiltersBtn.hidden = true;
+  }
+  empty.hidden = false;
+}
+
+if (clearFiltersBtn) {
+  clearFiltersBtn.addEventListener("click", () => {
+    state.directory = "";
+    state.status = "all";
+    state.query = "";
+    if (filterSel) filterSel.value = "all";
+    if (searchInput) searchInput.value = "";
+    document.querySelectorAll(".dir-link").forEach((el) => el.classList.remove("active"));
+    const allLink = document.querySelector('.dir-link[data-dir=""]');
+    if (allLink) allLink.classList.add("active");
+    writeQuery();
+    loadBooks();
+  });
 }
 
 function makeCard(book) {

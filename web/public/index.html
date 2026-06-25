@@ -52,7 +52,16 @@
 
     <section class="content">
       <div id="grid" class="grid"></div>
-      <p id="empty" class="empty" hidden>書籍が見つかりません。設定画面から再インデックスを実行してください。</p>
+      <div id="empty" class="empty-state" hidden>
+        <svg class="empty-icon" viewBox="0 0 64 64" width="64" height="64" aria-hidden="true">
+          <rect x="10" y="8" width="44" height="48" rx="3" fill="none" stroke="currentColor" stroke-width="2"/>
+          <line x1="20" y1="20" x2="44" y2="20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <line x1="20" y1="30" x2="44" y2="30" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <line x1="20" y1="40" x2="36" y2="40" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <p id="empty-text" class="empty-text"></p>
+        <button id="clear-filters" class="empty-action" type="button" hidden>条件をクリア</button>
+      </div>
     </section>
   </main>
 
