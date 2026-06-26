@@ -442,6 +442,11 @@ function bindEvents() {
     if (Number.isFinite(n)) jumpTo(n, { align: false });
   });
   menuClose.addEventListener("click", () => hideMenuOverlay());
+  // 枠外タップ (backdrop) でメニューを閉じる
+  const menuBackdrop = document.querySelector("#menu-backdrop");
+  if (menuBackdrop) {
+    menuBackdrop.addEventListener("click", () => hideMenuOverlay());
+  }
 
   // 自動送り (auto-advance) のスライダー + 一時停止ボタン
   if (autoAdvSel) {
@@ -995,12 +1000,16 @@ function toggleMenuOverlay() {
 function showMenuOverlay() {
   syncSeekUi();
   menuOverlay.removeAttribute("hidden");
+  const backdrop = document.querySelector("#menu-backdrop");
+  if (backdrop) backdrop.removeAttribute("hidden");
   // メニュー表示中は自動送りを止める (誤発火・操作中断を防ぐ)
   AutoAdvance.setSystemPaused(true);
 }
 
 function hideMenuOverlay() {
   menuOverlay.setAttribute("hidden", "");
+  const backdrop = document.querySelector("#menu-backdrop");
+  if (backdrop) backdrop.setAttribute("hidden", "");
   AutoAdvance.setSystemPaused(false);
 }
 

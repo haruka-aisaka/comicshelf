@@ -658,6 +658,14 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
 
 /* ---------- 統合メニューオーバーレイ (中央タップで開く) ---------- */
 /* viewport下端に固定し、SafeArea(ホームインジケータ)分を内部paddingで確保。 */
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  z-index: 49;
+}
+.menu-backdrop[hidden] { display: none; }
+
 .menu-overlay {
   position: fixed;
   left: 0;
