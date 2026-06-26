@@ -475,14 +475,15 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   to { transform: rotate(360deg); }
 }
 
-/* 上端の自動送り進捗バー (auto-advance が ON のときだけ表示) */
+/* 上端の自動送り進捗バー (auto-advance が ON のときだけ表示)。
+   読書の没入を妨げないよう、 高さ・色とも控えめに。 */
 .auto-progress-bar {
   position: absolute;
   left: 0;
   right: 0;
   top: var(--safe-top);
-  height: 3px;
-  background: rgba(255, 255, 255, 0.08);
+  height: 1.5px;
+  background: transparent;
   pointer-events: none;
   z-index: 4;
 }
@@ -491,11 +492,15 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   display: block;
   height: 100%;
   width: 0%;
-  background: rgba(122, 162, 247, 0.95);
+  background: rgba(122, 162, 247, 0.45);
   transition: width 0.12s linear;
 }
+/* RTL の時は fill が右端から左に向かって伸びる (読み進める方向に追従) */
+.auto-progress-bar[data-dir="rtl"] .auto-progress-bar-fill {
+  margin-left: auto;
+}
 .auto-progress-bar.paused .auto-progress-bar-fill {
-  background: rgba(220, 180, 80, 0.85);
+  background: rgba(220, 180, 80, 0.4);
   transition: none;
 }
 

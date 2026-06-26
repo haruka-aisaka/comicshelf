@@ -217,6 +217,8 @@ const AutoAdvance = {
     }
     autoBarEl.removeAttribute("hidden");
     autoBarEl.classList.toggle("paused", this.paused);
+    // 読書方向に追従 (RTL: 右端から左へ進む)
+    autoBarEl.dataset.dir = direction;
     autoBarFill.style.width = `${Math.max(0, Math.min(100, ratio * 100))}%`;
   },
 
@@ -982,6 +984,8 @@ function applyDirection() {
   // CSS `direction: rtl` だと iOS Safariの一部バージョンで slider value が
   // 反転扱いされ、ページ番号と対応しなくなる既知の挙動を回避する。
   seekBar.style.transform = direction === "rtl" ? "scaleX(-1)" : "";
+  // 自動送りの進捗バーも読書方向に追従
+  if (autoBarEl) autoBarEl.dataset.dir = direction;
 }
 
 function applySpreadClass() {
