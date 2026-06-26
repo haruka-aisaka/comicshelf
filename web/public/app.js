@@ -389,7 +389,9 @@ if (menuToggle && scrim) {
     }
   });
 
-  // エッジスワイプでサイドバー開閉 (モバイルのみ)
+  // エッジスワイプでサイドバー開閉 (モバイル + PWA standalone のみ)
+  //  ブラウザ Safari では iOS の戻るスワイプ (左端) と衝突するため、
+  //  「ホーム画面に追加」 した PWA (standalone) のみで有効化する。
   // - 閉じ状態: 左端 24px 以内から右へ 50px 以上スワイプ → 開く
   // - 開き状態: 任意の位置から左へ 50px 以上スワイプ → 閉じる
   // 縦方向の動きが優勢ならスクロール扱いで無効化
@@ -398,8 +400,14 @@ if (menuToggle && scrim) {
   /** @type {{x: number, y: number, openedAtStart: boolean}|null} */
   let touchStart = null;
 
+  /** PWA standalone モードかどうか (iOS Safari / Chrome 共対応) */
+  const isStandalone = () =>
+    window.matchMedia("(display-mode: standalone)").matches ||
+    /** @type {{standalone?: boolean}} */ (window.navigator).standalone === true;
+
   window.addEventListener("touchstart", (e) => {
     if (!window.matchMedia("(max-width: 768px)").matches) return;
+    if (!isStandalone()) return;
     if (e.touches.length !== 1) {
       touchStart = null;
       return;
