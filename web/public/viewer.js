@@ -95,17 +95,18 @@ function applySpreadModeChange() {
 }
 
 /** ---------- 自動ページ送り (auto-advance) ----------
- *  - intervalSec=0 で OFF。 > 0 で running。
- *  - 進捗を stage 上端の細いバーで可視化。 残時間がゼロで moveForward()。
+ *  - スライダーで間隔を設定 (1.0〜60秒)。 起動時 / リロード時は常に「停止」 状態で始まる。
+ *  - ユーザーが「再開」 を押すと running。 進捗バーで残時間を可視化。
  *  - 手動操作 (jumpTo / move*) でタイマーを再スタート (リスペクト)。
- *  - menu-overlay 表示中 / タブが背景 / ユーザー一時停止 で pause。
+ *  - menu-overlay 表示中 / タブが背景 で system pause (自動 stop は別扱い)。
  */
 const AUTO_ADV_KEY = "comicshelf.autoAdvanceSec";
 const AutoAdvance = {
-  intervalSec: clampInterval(Number(localStorage.getItem(AUTO_ADV_KEY) ?? "0")),
+  /** 設定値 (常に >= 1)。 永続化する */
+  intervalSec: clampInterval(Number(localStorage.getItem(AUTO_ADV_KEY) ?? String(MIN_INTERVAL_SEC))),
   startedAt: 0,
-  /** ユーザーが明示的に一時停止したか */
-  userPaused: false,
+  /** ユーザーが「停止」 状態にしているか。 永続化しない (起動時は常に true)。 */
+  userStopped: true,
   /** メニュー表示や非アクティブで強制 pause か */
   systemPaused: false,
   /** auto-advance 由来の moveForward 中か (jumpTo の reset 抑制用) */
@@ -113,30 +114,24 @@ const AutoAdvance = {
   /** @type {number} 100ms tick の interval ID */
   _tickHandle: 0,
 
-  get running() {
-    return this.intervalSec > 0;
-  },
-  get paused() {
-    return this.userPaused || this.systemPaused;
+  /** 「実際にタイマーが進む」 状態か */
+  get active() {
+    return !this.userStopped && !this.systemPaused;
   },
 
   setIntervalSec(sec) {
     this.intervalSec = clampInterval(sec);
     localStorage.setItem(AUTO_ADV_KEY, String(this.intervalSec));
-    this.userPaused = false;
-    if (!this.running) {
-      this.stop();
-    } else {
-      this.restart();
-    }
+    if (this.active) this.restart();
     this.updateUi();
   },
 
-  toggleUserPause() {
-    if (!this.running) return;
-    this.userPaused = !this.userPaused;
-    if (this.userPaused) {
+  toggleUserStop() {
+    this.userStopped = !this.userStopped;
+    if (this.userStopped) {
       this.stopTick();
+      this.startedAt = 0;
+      this.updateBar(0);
     } else if (!this.systemPaused) {
       this.restart();
     }
@@ -146,10 +141,10 @@ const AutoAdvance = {
   setSystemPaused(paused) {
     if (this.systemPaused === paused) return;
     this.systemPaused = paused;
-    if (!this.running) return;
+    if (this.userStopped) return; // ユーザー停止中はシステム pause も無関係
     if (paused) {
       this.stopTick();
-    } else if (!this.userPaused) {
+    } else {
       this.restart();
     }
     this.updateUi();
@@ -157,17 +152,19 @@ const AutoAdvance = {
 
   /** タイマーを再スタート (手動ページ操作後 / 設定変更後) */
   restart() {
-    if (!this.running || this.paused) return;
+    if (!this.active) return;
     this.startedAt = Date.now();
     this.startTick();
     this.updateBar(0);
   },
 
-  /** 完全停止 (OFF や 終端到達時) */
+  /** 完全停止 (終端到達時) — userStopped 状態にする */
   stop() {
     this.stopTick();
+    this.userStopped = true;
     this.startedAt = 0;
     this.updateBar(0);
+    this.updateUi();
   },
 
   startTick() {
@@ -182,7 +179,7 @@ const AutoAdvance = {
   },
 
   tick() {
-    if (!this.running || this.paused || totalPages <= 0) return;
+    if (!this.active || totalPages <= 0) return;
     const elapsedMs = Date.now() - this.startedAt;
     const totalMs = this.intervalSec * 1000;
     const ratio = Math.min(1, elapsedMs / totalMs);
@@ -203,20 +200,19 @@ const AutoAdvance = {
 
   /** ユーザー由来でページが変わった時に呼ばれる。 タイマー再スタート */
   onUserPageChange() {
-    if (!this.running) return;
+    if (!this.active) return;
     if (this._advancing) return;
-    if (this.paused) return;
     this.restart();
   },
 
   updateBar(ratio) {
     if (!autoBarEl || !autoBarFill) return;
-    if (!this.running) {
+    if (this.userStopped) {
       autoBarEl.setAttribute("hidden", "");
       return;
     }
     autoBarEl.removeAttribute("hidden");
-    autoBarEl.classList.toggle("paused", this.paused);
+    autoBarEl.classList.toggle("paused", this.systemPaused);
     // 読書方向に追従 (RTL: 右端から左へ進む)
     autoBarEl.dataset.dir = direction;
     autoBarFill.style.width = `${Math.max(0, Math.min(100, ratio * 100))}%`;
@@ -234,15 +230,14 @@ const AutoAdvance = {
     const valueEl = document.querySelector("#auto-adv-value");
     if (valueEl) valueEl.textContent = formatIntervalLabel(this.intervalSec);
     if (autoPauseBtn) {
-      autoPauseBtn.hidden = !this.running;
-      autoPauseBtn.setAttribute("aria-pressed", this.userPaused ? "true" : "false");
+      autoPauseBtn.setAttribute("aria-pressed", this.userStopped ? "true" : "false");
       const label = autoPauseBtn.querySelector(".auto-pause-label");
       const icon = autoPauseBtn.querySelector(".auto-pause-icon");
-      if (label) label.textContent = this.userPaused ? "再開" : "一時停止";
-      if (icon) icon.textContent = this.userPaused ? "▶" : "‖";
+      if (label) label.textContent = this.userStopped ? "再開" : "停止";
+      if (icon) icon.textContent = this.userStopped ? "▶" : "‖";
     }
     this.updateBar(
-      this.running && this.startedAt > 0
+      this.active && this.startedAt > 0
         ? Math.min(1, (Date.now() - this.startedAt) / (this.intervalSec * 1000))
         : 0,
     );
@@ -251,18 +246,17 @@ const AutoAdvance = {
 
 /**
  * 自動送り間隔を有効範囲にクランプ。
- *  - 0 = OFF
- *  - 0.1 〜 600 秒の小数 (0.1 秒単位に丸め、 安全のため上限を 10 分)
+ *  - 最短 1 秒。 1 未満は 1 に丸める。
+ *  - 0.1 秒単位 (UI は max=60、 安全のため内部上限 600 秒)
  */
+const MIN_INTERVAL_SEC = 1;
 function clampInterval(n) {
-  if (!Number.isFinite(n) || n <= 0) return 0;
+  if (!Number.isFinite(n) || n < MIN_INTERVAL_SEC) return MIN_INTERVAL_SEC;
   const rounded = Math.round(n * 10) / 10;
-  if (rounded < 0.1) return 0;
   return Math.min(600, rounded);
 }
 
 function formatIntervalLabel(sec) {
-  if (sec <= 0) return "OFF";
   // 整数秒は小数点なし、 小数の場合は 0.1 単位
   return Number.isInteger(sec) ? `${sec} 秒` : `${sec.toFixed(1)} 秒`;
 }
@@ -457,11 +451,11 @@ function bindEvents() {
     });
   }
   if (autoPauseBtn) {
-    autoPauseBtn.addEventListener("click", () => AutoAdvance.toggleUserPause());
+    autoPauseBtn.addEventListener("click", () => AutoAdvance.toggleUserStop());
   }
+  // 本を開いた直後 / リロード後は常に「停止」 状態から (userStopped 初期値 true)。
+  // 設定値 (intervalSec) は localStorage から復元される。
   AutoAdvance.updateUi();
-  // 起動直後に有効なら開始
-  if (AutoAdvance.running) AutoAdvance.restart();
 
   // タブが背景に回った時は pause、 戻ったら resume
   document.addEventListener("visibilitychange", () => {
