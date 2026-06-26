@@ -266,6 +266,10 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   padding: 20px;
   padding-right: calc(20px + var(--safe-right));
   padding-bottom: calc(20px + var(--safe-bottom));
+  /* grid item の デフォルト min-width: auto は子の intrinsic width を尊重するため、
+     .section-row (overflow-x:auto, 内側 ~1300px) に親が押し広げられて
+     ビューポート超になっていた。 min-width:0 で grid の 1fr column に従わせる */
+  min-width: 0;
 }
 .grid {
   display: grid;
