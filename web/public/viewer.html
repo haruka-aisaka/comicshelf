@@ -17,6 +17,7 @@
     <button class="nav-prev" id="prev" aria-label="前のページ">‹</button>
     <div id="pages" class="pages"></div>
     <button class="nav-next" id="next" aria-label="次のページ">›</button>
+    <div id="auto-progress-bar" class="auto-progress-bar" aria-hidden="true" hidden><span class="auto-progress-bar-fill"></span></div>
     <div id="progress-bar" class="progress-bar" aria-hidden="true"><span class="progress-bar-fill"></span></div>
     <div id="loader" class="loader" hidden aria-hidden="true"><div class="spinner"></div></div>
   </div>
@@ -61,6 +62,15 @@
           <option value="ltr">左→右</option>
         </select>
       </label>
+    </div>
+    <div class="menu-row menu-auto-advance">
+      <span class="auto-adv-title">自動送り</span>
+      <input type="range" id="auto-adv-sec" min="0" max="60" step="0.1" value="0">
+      <span id="auto-adv-value" class="auto-adv-value">OFF</span>
+      <button type="button" id="auto-adv-pause" class="auto-pause-btn" hidden aria-pressed="false">
+        <span class="auto-pause-icon" aria-hidden="true">‖</span>
+        <span class="auto-pause-label">一時停止</span>
+      </button>
     </div>
     <div class="menu-row">
       <button id="finish-and-close" type="button" class="finish-btn">既読にして閉じる</button>

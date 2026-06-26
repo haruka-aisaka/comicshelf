@@ -475,6 +475,65 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   to { transform: rotate(360deg); }
 }
 
+/* 上端の自動送り進捗バー (auto-advance が ON のときだけ表示) */
+.auto-progress-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--safe-top);
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+  z-index: 4;
+}
+.auto-progress-bar[hidden] { display: none; }
+.auto-progress-bar-fill {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: rgba(122, 162, 247, 0.95);
+  transition: width 0.12s linear;
+}
+.auto-progress-bar.paused .auto-progress-bar-fill {
+  background: rgba(220, 180, 80, 0.85);
+  transition: none;
+}
+
+.menu-auto-advance {
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.auto-adv-title { color: var(--text-dim); font-size: 13px; min-width: 56px; }
+#auto-adv-sec[type="range"] {
+  flex: 1 1 160px;
+  min-width: 120px;
+}
+.auto-adv-value {
+  font-variant-numeric: tabular-nums;
+  min-width: 56px;
+  text-align: right;
+  color: var(--text);
+  font-size: 13px;
+}
+.auto-pause-btn {
+  background: var(--surface-2, #1a1d23);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.auto-pause-btn[aria-pressed="true"] {
+  background: rgba(220, 180, 80, 0.18);
+  border-color: rgba(220, 180, 80, 0.6);
+}
+.auto-pause-icon { font-size: 14px; line-height: 1; }
+
 /* 底部進捗バー (常時表示、 細く半透明) */
 .progress-bar {
   position: absolute;

@@ -43,6 +43,12 @@ const finishBtn = $("#finish-and-close");
 const progressBarFill = /** @type {HTMLElement|null} */ (
   document.querySelector("#progress-bar .progress-bar-fill")
 );
+const autoBarEl = /** @type {HTMLElement|null} */ (document.querySelector("#auto-progress-bar"));
+const autoBarFill = /** @type {HTMLElement|null} */ (
+  document.querySelector("#auto-progress-bar .auto-progress-bar-fill")
+);
+const autoAdvSel = /** @type {HTMLInputElement|null} */ (document.querySelector("#auto-adv-sec"));
+const autoPauseBtn = /** @type {HTMLButtonElement|null} */ (document.querySelector("#auto-adv-pause"));
 const loaderEl = /** @type {HTMLElement|null} */ (document.querySelector("#loader"));
 /** @type {number|undefined} スピナー表示の遅延タイマー */
 let loaderTimer;
@@ -86,6 +92,170 @@ function applySpreadModeChange() {
   currentPage = clamp(alignToPair(currentPage), 0, Math.max(0, totalPages - 1));
   resetZoom();
   render();
+}
+
+/** ---------- 自動ページ送り (auto-advance) ----------
+ *  - intervalSec=0 で OFF。 > 0 で running。
+ *  - 進捗を stage 上端の細いバーで可視化。 残時間がゼロで moveForward()。
+ *  - 手動操作 (jumpTo / move*) でタイマーを再スタート (リスペクト)。
+ *  - menu-overlay 表示中 / タブが背景 / ユーザー一時停止 で pause。
+ */
+const AUTO_ADV_KEY = "comicshelf.autoAdvanceSec";
+const AutoAdvance = {
+  intervalSec: clampInterval(Number(localStorage.getItem(AUTO_ADV_KEY) ?? "0")),
+  startedAt: 0,
+  /** ユーザーが明示的に一時停止したか */
+  userPaused: false,
+  /** メニュー表示や非アクティブで強制 pause か */
+  systemPaused: false,
+  /** auto-advance 由来の moveForward 中か (jumpTo の reset 抑制用) */
+  _advancing: false,
+  /** @type {number} 100ms tick の interval ID */
+  _tickHandle: 0,
+
+  get running() {
+    return this.intervalSec > 0;
+  },
+  get paused() {
+    return this.userPaused || this.systemPaused;
+  },
+
+  setIntervalSec(sec) {
+    this.intervalSec = clampInterval(sec);
+    localStorage.setItem(AUTO_ADV_KEY, String(this.intervalSec));
+    this.userPaused = false;
+    if (!this.running) {
+      this.stop();
+    } else {
+      this.restart();
+    }
+    this.updateUi();
+  },
+
+  toggleUserPause() {
+    if (!this.running) return;
+    this.userPaused = !this.userPaused;
+    if (this.userPaused) {
+      this.stopTick();
+    } else if (!this.systemPaused) {
+      this.restart();
+    }
+    this.updateUi();
+  },
+
+  setSystemPaused(paused) {
+    if (this.systemPaused === paused) return;
+    this.systemPaused = paused;
+    if (!this.running) return;
+    if (paused) {
+      this.stopTick();
+    } else if (!this.userPaused) {
+      this.restart();
+    }
+    this.updateUi();
+  },
+
+  /** タイマーを再スタート (手動ページ操作後 / 設定変更後) */
+  restart() {
+    if (!this.running || this.paused) return;
+    this.startedAt = Date.now();
+    this.startTick();
+    this.updateBar(0);
+  },
+
+  /** 完全停止 (OFF や 終端到達時) */
+  stop() {
+    this.stopTick();
+    this.startedAt = 0;
+    this.updateBar(0);
+  },
+
+  startTick() {
+    this.stopTick();
+    this._tickHandle = setInterval(() => this.tick(), 100);
+  },
+  stopTick() {
+    if (this._tickHandle) {
+      clearInterval(this._tickHandle);
+      this._tickHandle = 0;
+    }
+  },
+
+  tick() {
+    if (!this.running || this.paused || totalPages <= 0) return;
+    const elapsedMs = Date.now() - this.startedAt;
+    const totalMs = this.intervalSec * 1000;
+    const ratio = Math.min(1, elapsedMs / totalMs);
+    this.updateBar(ratio);
+    if (ratio >= 1) {
+      const before = currentPage;
+      this._advancing = true;
+      moveForward();
+      this._advancing = false;
+      if (currentPage === before) {
+        // 末尾で進めなかった → 停止
+        this.stop();
+      } else {
+        this.restart();
+      }
+    }
+  },
+
+  /** ユーザー由来でページが変わった時に呼ばれる。 タイマー再スタート */
+  onUserPageChange() {
+    if (!this.running) return;
+    if (this._advancing) return;
+    if (this.paused) return;
+    this.restart();
+  },
+
+  updateBar(ratio) {
+    if (!autoBarEl || !autoBarFill) return;
+    if (!this.running) {
+      autoBarEl.setAttribute("hidden", "");
+      return;
+    }
+    autoBarEl.removeAttribute("hidden");
+    autoBarEl.classList.toggle("paused", this.paused);
+    autoBarFill.style.width = `${Math.max(0, Math.min(100, ratio * 100))}%`;
+  },
+
+  updateUi() {
+    if (autoAdvSel) autoAdvSel.value = String(this.intervalSec);
+    const valueEl = document.querySelector("#auto-adv-value");
+    if (valueEl) valueEl.textContent = formatIntervalLabel(this.intervalSec);
+    if (autoPauseBtn) {
+      autoPauseBtn.hidden = !this.running;
+      autoPauseBtn.setAttribute("aria-pressed", this.userPaused ? "true" : "false");
+      const label = autoPauseBtn.querySelector(".auto-pause-label");
+      const icon = autoPauseBtn.querySelector(".auto-pause-icon");
+      if (label) label.textContent = this.userPaused ? "再開" : "一時停止";
+      if (icon) icon.textContent = this.userPaused ? "▶" : "‖";
+    }
+    this.updateBar(
+      this.running && this.startedAt > 0
+        ? Math.min(1, (Date.now() - this.startedAt) / (this.intervalSec * 1000))
+        : 0,
+    );
+  },
+};
+
+/**
+ * 自動送り間隔を有効範囲にクランプ。
+ *  - 0 = OFF
+ *  - 0.1 〜 600 秒の小数 (0.1 秒単位に丸め、 安全のため上限を 10 分)
+ */
+function clampInterval(n) {
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const rounded = Math.round(n * 10) / 10;
+  if (rounded < 0.1) return 0;
+  return Math.min(600, rounded);
+}
+
+function formatIntervalLabel(sec) {
+  if (sec <= 0) return "OFF";
+  // 整数秒は小数点なし、 小数の場合は 0.1 単位
+  return Number.isInteger(sec) ? `${sec} 秒` : `${sec.toFixed(1)} 秒`;
 }
 
 /** ピンチ拡大state */
@@ -269,6 +439,25 @@ function bindEvents() {
     if (Number.isFinite(n)) jumpTo(n, { align: false });
   });
   menuClose.addEventListener("click", () => hideMenuOverlay());
+
+  // 自動送り (auto-advance) のスライダー + 一時停止ボタン
+  if (autoAdvSel) {
+    autoAdvSel.value = String(AutoAdvance.intervalSec);
+    autoAdvSel.addEventListener("input", () => {
+      AutoAdvance.setIntervalSec(Number(autoAdvSel.value));
+    });
+  }
+  if (autoPauseBtn) {
+    autoPauseBtn.addEventListener("click", () => AutoAdvance.toggleUserPause());
+  }
+  AutoAdvance.updateUi();
+  // 起動直後に有効なら開始
+  if (AutoAdvance.running) AutoAdvance.restart();
+
+  // タブが背景に回った時は pause、 戻ったら resume
+  document.addEventListener("visibilitychange", () => {
+    AutoAdvance.setSystemPaused(document.visibilityState !== "visible");
+  });
 
   document.addEventListener("keydown", (e) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
@@ -658,6 +847,7 @@ function jumpTo(n, opts = {}) {
   scheduleSave();
   prefetchAround(currentPage);
   syncSeekUi();
+  AutoAdvance.onUserPageChange();
 }
 
 /** ---------- 描画 ---------- */
@@ -800,10 +990,13 @@ function toggleMenuOverlay() {
 function showMenuOverlay() {
   syncSeekUi();
   menuOverlay.removeAttribute("hidden");
+  // メニュー表示中は自動送りを止める (誤発火・操作中断を防ぐ)
+  AutoAdvance.setSystemPaused(true);
 }
 
 function hideMenuOverlay() {
   menuOverlay.setAttribute("hidden", "");
+  AutoAdvance.setSystemPaused(false);
 }
 
 function syncSeekUi() {
