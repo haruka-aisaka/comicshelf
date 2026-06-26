@@ -101,6 +101,7 @@ function applySpreadModeChange() {
  *  - menu-overlay 表示中 / タブが背景 で system pause (自動 stop は別扱い)。
  */
 const AUTO_ADV_KEY = "comicshelf.autoAdvanceSec";
+const MIN_INTERVAL_SEC = 1;
 const AutoAdvance = {
   /** 設定値 (常に >= 1)。 永続化する */
   intervalSec: clampInterval(Number(localStorage.getItem(AUTO_ADV_KEY) ?? String(MIN_INTERVAL_SEC))),
@@ -246,10 +247,9 @@ const AutoAdvance = {
 
 /**
  * 自動送り間隔を有効範囲にクランプ。
- *  - 最短 1 秒。 1 未満は 1 に丸める。
+ *  - 最短 1 秒 (MIN_INTERVAL_SEC) 。 1 未満は 1 に丸める。
  *  - 0.1 秒単位 (UI は max=60、 安全のため内部上限 600 秒)
  */
-const MIN_INTERVAL_SEC = 1;
 function clampInterval(n) {
   if (!Number.isFinite(n) || n < MIN_INTERVAL_SEC) return MIN_INTERVAL_SEC;
   const rounded = Math.round(n * 10) / 10;
