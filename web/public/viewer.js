@@ -221,7 +221,14 @@ const AutoAdvance = {
   },
 
   updateUi() {
-    if (autoAdvSel) autoAdvSel.value = String(this.intervalSec);
+    if (autoAdvSel) {
+      autoAdvSel.value = String(this.intervalSec);
+      // 進捗 (0..1) を CSS var に書き込んで track の gradient fill を更新
+      const max = Number(autoAdvSel.max) || 1;
+      const min = Number(autoAdvSel.min) || 0;
+      const ratio = max > min ? (this.intervalSec - min) / (max - min) : 0;
+      autoAdvSel.style.setProperty("--val", String(Math.max(0, Math.min(1, ratio))));
+    }
     const valueEl = document.querySelector("#auto-adv-value");
     if (valueEl) valueEl.textContent = formatIntervalLabel(this.intervalSec);
     if (autoPauseBtn) {

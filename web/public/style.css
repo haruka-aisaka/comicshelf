@@ -505,9 +505,75 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   flex-wrap: wrap;
 }
 .auto-adv-title { color: var(--text-dim); font-size: 13px; min-width: 56px; }
-#auto-adv-sec[type="range"] {
+/* スライダーをフルカスタムスタイル化。
+   ラッパー .auto-adv-slider-wrap で thumb 半径ぶん左右にはみ出させ、
+   thumb が track と input の左右端まで揃って到達するようにする。 */
+.auto-adv-slider-wrap {
   flex: 1 1 160px;
   min-width: 120px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 22px;
+}
+#auto-adv-sec[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  border: none;
+  outline: none;
+  height: 22px;
+  padding: 0;
+  margin: 0 -9px; /* 半径分を外側に出して thumb 中心が input の "外側端" まで届く */
+  width: calc(100% + 18px);
+  cursor: pointer;
+}
+#auto-adv-sec[type="range"]:focus { outline: none; }
+#auto-adv-sec[type="range"]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(
+    to right,
+    var(--accent, #7aa2f7) 0,
+    var(--accent, #7aa2f7) calc(9px + (100% - 18px) * var(--val, 0)),
+    var(--border) calc(9px + (100% - 18px) * var(--val, 0)),
+    var(--border) 100%
+  );
+  border-radius: 2px;
+  border: none;
+}
+#auto-adv-sec[type="range"]::-moz-range-track {
+  width: 100%;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  border: none;
+}
+#auto-adv-sec[type="range"]::-moz-range-progress {
+  background: var(--accent, #7aa2f7);
+  height: 4px;
+  border-radius: 2px;
+}
+#auto-adv-sec[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: var(--accent, #7aa2f7);
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.4);
+}
+#auto-adv-sec[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent, #7aa2f7);
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.4);
 }
 .auto-adv-value {
   font-variant-numeric: tabular-nums;
