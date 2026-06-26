@@ -107,6 +107,11 @@ button:hover { background: #2d3340; }
 }
 .sections[hidden] { display: none; }
 .section[hidden] { display: none; }
+/* セクション containerが overflow-x:auto の子 (section-row) で押し広げられるのを防ぐ。
+   min-width: 0 がないと flex 子は中身の intrinsic width で固定され、 親(.content)を
+   ビューポート超に拡張してしまい、 grid の auto-fill が誤った列数を計算してしまう。 */
+.sections, .section { min-width: 0; }
+.section-row { min-width: 0; max-width: 100%; }
 .section {
   /* セクション間に明確な区切り */
   padding: 14px 0;
