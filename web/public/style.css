@@ -28,7 +28,11 @@ html, body {
   min-height: 100vh;
   /* iOS スワイプバウンス抑制 */
   overscroll-behavior-y: contain;
+  /* iOS Safari がページ全体のピンチ拡大を許可するのを抑制 (viewport user-scalable=no の保険)
+     viewer は body.viewer-body で独自ジェスチャー処理するため除外 */
+  touch-action: pan-x pan-y;
 }
+body.viewer-body { touch-action: none; }
 
 /* iOS Safari: notch/Dynamic Island背後をbar色で塗りつぶすため、
    html背景もtopbar色で統一 (要素の隙間に bg が露出するのを防ぐ) */
@@ -95,18 +99,40 @@ button:hover { background: #2d3340; }
 .sections {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  margin-bottom: 24px;
+  gap: 8px;
+  margin-bottom: 28px;
 }
 .sections[hidden] { display: none; }
 .section[hidden] { display: none; }
+.section {
+  /* セクション間に明確な区切り */
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.section:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.section:first-of-type {
+  padding-top: 0;
+}
 .section-title {
-  margin: 0 0 8px;
-  font-size: 14px;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  font-weight: 600;
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text);
+  letter-spacing: 0.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.section-title::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 14px;
+  background: var(--accent, #7aa2f7);
+  border-radius: 2px;
 }
 .section-row {
   display: flex;
@@ -398,7 +424,8 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  /* 見開き時の隙間を完全になくす (ノドが綺麗につながる) */
+  gap: 0;
   /* ピンチ拡大用 (transform: translate + scale) */
   transform-origin: center center;
   will-change: transform;
