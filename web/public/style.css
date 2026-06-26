@@ -31,6 +31,9 @@ html, body {
   /* iOS Safari がページ全体のピンチ拡大を許可するのを抑制 (viewport user-scalable=no の保険)
      viewer は body.viewer-body で独自ジェスチャー処理するため除外 */
   touch-action: pan-x pan-y;
+  /* 一覧画面でセクションのカルーセル等が原因で横方向にスクロールしないよう抑制 */
+  overflow-x: hidden;
+  max-width: 100%;
 }
 body.viewer-body { touch-action: none; }
 
@@ -498,20 +501,21 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
 .pages:not(.spread).fit-contain img { max-width: 100%; max-height: 100%; }
 
 /* ---------- 見開き表示 ---------- */
-/* 2枚を flex で均等に分け合う。 ポートレートでも min-width:0 で縮小許可、
-   contain で各画像のアスペクト比を保持する。 */
+/* flex item を grow させず、 各画像が自身のアスペクト比でくっついて並ぶようにする。
+   (flex: 1 1 0 + object-fit: contain だと box が grow して中央寄せされ、
+    結果として画像間に隙間が生じていた - 特に横画面で顕著) */
 .pages.spread img {
-  flex: 1 1 0;
+  flex: 0 0 auto;
   min-width: 0;
   min-height: 0;
   width: auto;
-  height: auto;
-  max-width: 100%;
+  height: 100%;
+  max-width: 50%;
   max-height: 100%;
   object-fit: contain;
-  align-self: stretch;
 }
-.pages.spread.fit-height img { height: 100%; }
+.pages.spread.fit-width img { height: auto; max-width: 50%; width: 50%; max-height: 100%; }
+.pages.spread.fit-contain img { height: auto; width: auto; max-width: 50%; max-height: 100%; }
 
 /* ---------- 統合メニューオーバーレイ (中央タップで開く) ---------- */
 /* viewport下端に固定し、SafeArea(ホームインジケータ)分を内部paddingで確保。 */
@@ -621,9 +625,16 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
 @media (max-width: 768px) {
   .menu-toggle { display: block; }
   .topbar h1 { font-size: 16px; }
-  .toolbar { gap: 6px; }
+  .toolbar { gap: 6px; flex-wrap: wrap; min-width: 0; }
   .toolbar #reindex { font-size: 12px; padding: 6px 8px; }
   .toolbar #sort { font-size: 12px; padding: 6px 6px; }
+  /* モバイルでは検索入力を縮められるよう min-width を解除し、 段折り時にも溢れない */
+  .search-label { flex: 1 1 100%; min-width: 0; }
+  .search-label input[type="search"] {
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+  }
   .status { display: none; }
 
   .main { grid-template-columns: 1fr; }
