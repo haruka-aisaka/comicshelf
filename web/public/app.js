@@ -13,6 +13,9 @@ const clearFiltersBtn = /** @type {HTMLButtonElement|null} */ (document.querySel
 const sortSel = /** @type {HTMLSelectElement} */ ($("#sort"));
 const filterSel = /** @type {HTMLSelectElement} */ ($("#status-filter"));
 const searchInput = /** @type {HTMLInputElement|null} */ (document.querySelector("#search"));
+const searchClearBtn = /** @type {HTMLButtonElement|null} */ (
+  document.querySelector("#search-clear")
+);
 const statusEl = /** @type {HTMLElement} */ (document.querySelector(".topbar .status"));
 const dirList = $("#directories");
 
@@ -37,10 +40,22 @@ if (filterSel) {
   });
 }
 
+function updateSearchClearVisibility() {
+  if (!searchClearBtn || !searchInput) return;
+  if (searchInput.value.length > 0) {
+    searchClearBtn.removeAttribute("hidden");
+  } else {
+    searchClearBtn.setAttribute("hidden", "");
+  }
+}
+
 if (searchInput) {
   /** @type {number|undefined} */
   let debounceTimer;
+  // 初期表示時 (state.query 反映直後) にもボタン表示を更新
+  updateSearchClearVisibility();
   searchInput.addEventListener("input", () => {
+    updateSearchClearVisibility();
     if (debounceTimer !== undefined) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       const next = searchInput.value.trim();
@@ -50,6 +65,23 @@ if (searchInput) {
       loadBooks();
       loadSections();
     }, 200);
+  });
+}
+
+if (searchClearBtn) {
+  searchClearBtn.addEventListener("click", () => {
+    if (!searchInput) return;
+    searchInput.value = "";
+    updateSearchClearVisibility();
+    // q だけクリア (directory / status は保持)
+    if (state.query !== "") {
+      state.query = "";
+      writeQuery();
+      loadBooks();
+      loadSections();
+    }
+    // 続けて入力できるようフォーカスを残す
+    searchInput.focus();
   });
 }
 

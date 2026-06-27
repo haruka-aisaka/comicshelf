@@ -185,19 +185,55 @@ button:hover { background: #2d3340; }
 }
 .empty-action:hover { border-color: var(--accent, #7aa2f7); }
 
+.search-input-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
 .search-label input[type="search"] {
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 6px 10px;
+  padding: 6px 32px 6px 10px; /* 右側は × ボタン分の余白 */
   font-size: 13px;
   min-width: 180px;
+  /* ブラウザ標準の × は隠す (自前ボタンで統一) */
+  -webkit-appearance: none;
+  appearance: none;
+}
+.search-label input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
 }
 .search-label input[type="search"]:focus {
   outline: none;
   border-color: var(--accent, #7aa2f7);
 }
+.search-clear {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.search-clear:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+.search-clear[hidden] { display: none; }
 .status { color: var(--text-dim); font-size: 12px; }
 .status.ok { color: var(--ok); }
 .status.error { color: var(--danger); }

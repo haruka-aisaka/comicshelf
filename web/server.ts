@@ -29,7 +29,11 @@ export function buildApp(opts: {
   app.route("/api", buildIndexAdminRoutes({ indexer }));
 
   // 静的フロントエンド (web/public/)
-  app.get("/", (c) => c.redirect("/index.html"));
+  // クエリ文字列を保持して /index.html に redirect (?q=foo などを失わない)
+  app.get("/", (c) => {
+    const url = new URL(c.req.url);
+    return c.redirect(`/index.html${url.search}`);
+  });
   app.get("*", async (c) => {
     const url = new URL(c.req.url);
     const path = url.pathname === "/" ? "/index.html" : url.pathname;

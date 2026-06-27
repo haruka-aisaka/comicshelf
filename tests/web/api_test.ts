@@ -182,3 +182,30 @@ Deno.test("API: /api/health", async () => {
     await w.cleanup();
   }
 });
+
+Deno.test("Server: GET / は query を保持して /index.html に redirect", async () => {
+  const w = await setupWorld();
+  try {
+    // クエリなし
+    const noQuery = await w.app.app.request("/", { redirect: "manual" });
+    assertEquals(noQuery.status, 302);
+    assertEquals(noQuery.headers.get("location"), "/index.html");
+
+    // クエリあり (q=foo)
+    const withQuery = await w.app.app.request("/?q=foo", { redirect: "manual" });
+    assertEquals(withQuery.status, 302);
+    assertEquals(withQuery.headers.get("location"), "/index.html?q=foo");
+
+    // 複数クエリ + URL エンコード
+    const multi = await w.app.app.request("/?q=hello%20world&sort=added", {
+      redirect: "manual",
+    });
+    assertEquals(multi.status, 302);
+    assertEquals(
+      multi.headers.get("location"),
+      "/index.html?q=hello%20world&sort=added",
+    );
+  } finally {
+    await w.cleanup();
+  }
+});

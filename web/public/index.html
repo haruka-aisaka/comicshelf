@@ -20,7 +20,10 @@
     <div class="toolbar">
       <label class="search-label">
         <span class="sr-label">検索</span>
-        <input id="search" type="search" placeholder="タイトル / ディレクトリ" autocomplete="off" inputmode="search" enterkeyhint="search">
+        <span class="search-input-wrap">
+          <input id="search" type="search" placeholder="タイトル / ディレクトリ / タグ" autocomplete="off" inputmode="search" enterkeyhint="search">
+          <button id="search-clear" class="search-clear" type="button" aria-label="検索をクリア" hidden>×</button>
+        </span>
       </label>
       <label class="sort-label">
         <span class="sr-label">フィルタ</span>
