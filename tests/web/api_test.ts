@@ -57,13 +57,20 @@ async function setupWorld(): Promise<{
 Deno.test("API E2E: 全体フロー (rebuild → list → page取得 → 既読更新)", async () => {
   const w = await setupWorld();
   try {
-    // 1. インデックス再構築
+    // 1. インデックス再構築 (fire-and-forget で 202 即時応答、 完了待機は status を polling)
     const rebuildRes = await w.app.app.request("/api/index/rebuild", { method: "POST" });
-    assertEquals(rebuildRes.status, 200);
-    const rebuild = await rebuildRes.json();
-    assertEquals(rebuild.scanned, 3);
-    assertEquals(rebuild.upserted, 3);
-    assertEquals(rebuild.removed, 0);
+    assertEquals(rebuildRes.status, 202);
+    // 完了するまで待つ (テスト環境では 1 秒以内)
+    for (let i = 0; i < 100; i++) {
+      const s = await (await w.app.app.request("/api/index/status")).json();
+      if (!s.running) {
+        assertEquals(s.lastResult.scanned, 3);
+        assertEquals(s.lastResult.upserted, 3);
+        assertEquals(s.lastResult.removed, 0);
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
 
     // 2. 一覧取得 (タイトルソート既定)
     const listRes = await w.app.app.request("/api/books");

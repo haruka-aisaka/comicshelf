@@ -31,6 +31,15 @@ export interface WarmupStatus {
   finishedAt: number | null;
 }
 
+/** 現在進行中の reindex 情報 (running 中のみ非 null) */
+export interface CurrentRunStatus {
+  startedAt: number;
+  /** これまでに走査した書籍数 (進捗表示用) */
+  scanned: number;
+  /** これまでに ComicInfo.xml を取り込んだ件数 */
+  comicInfoImported: number;
+}
+
 export interface IndexerStatus {
   /** 実行中か */
   running: boolean;
@@ -42,10 +51,13 @@ export interface IndexerStatus {
   nextRunAt: number | null;
   /** サムネwarmupの進行状況 */
   warmup: WarmupStatus;
+  /** 進行中の reindex 情報 (running=true の時のみ) */
+  currentRun: CurrentRunStatus | null;
 }
 
 export class IndexerService {
   private _running = false;
+  private _currentRun: CurrentRunStatus | null = null;
   private _lastResult: IndexerRunResult | null = null;
   private _lastError: string | null = null;
   private _nextRunAt: number | null = null;
@@ -80,6 +92,7 @@ export class IndexerService {
   get status(): IndexerStatus {
     return {
       running: this._running,
+      currentRun: this._currentRun ? { ...this._currentRun } : null,
       lastResult: this._lastResult,
       lastError: this._lastError,
       nextRunAt: this._nextRunAt,
@@ -98,11 +111,18 @@ export class IndexerService {
     if (this._running) return null;
     this._running = true;
     const startedAt = this.now();
+    this._currentRun = { startedAt, scanned: 0, comicInfoImported: 0 };
     try {
       const stats = await reindex(this.db, {
         roots: this.config.library.roots,
         extensions: this.config.library.extensions,
         now: () => Math.floor(this.now() / 1000),
+        onProgress: (s) => {
+          if (this._currentRun) {
+            this._currentRun.scanned = s.scanned;
+            this._currentRun.comicInfoImported = s.comicInfoImported;
+          }
+        },
       });
       const finishedAt = this.now();
       const result: IndexerRunResult = {
@@ -121,6 +141,7 @@ export class IndexerService {
       throw err;
     } finally {
       this._running = false;
+      this._currentRun = null;
     }
   }
 

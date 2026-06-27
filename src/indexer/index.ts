@@ -29,6 +29,8 @@ export interface IndexOptions extends ScanOptions {
   roots: string[];
   /** 現在時刻 (テスト用に注入可能) */
   now?: () => number;
+  /** 進捗通知 (1書籍処理ごとに呼ばれる)。 IndexerService で UI 表示に使う。 */
+  onProgress?: (stats: Pick<IndexStats, "scanned" | "comicInfoImported">) => void;
 }
 
 /**
@@ -88,6 +90,7 @@ export async function reindex(db: Database, opts: IndexOptions): Promise<IndexSt
         } catch (e) {
           console.warn(`[indexer] ComicInfo.xml 読込失敗 ${f.relativePath}:`, e);
         }
+        opts.onProgress?.({ scanned: stats.scanned, comicInfoImported: stats.comicInfoImported });
       }
     } catch (err) {
       console.error(`[indexer] failed to scan root ${root}:`, err);

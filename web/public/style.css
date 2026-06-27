@@ -31,8 +31,10 @@ html, body {
   /* iOS Safari がページ全体のピンチ拡大を許可するのを抑制 (viewport user-scalable=no の保険)
      viewer は body.viewer-body で独自ジェスチャー処理するため除外 */
   touch-action: pan-x pan-y;
-  /* 一覧画面でセクションのカルーセル等が原因で横方向にスクロールしないよう抑制 */
-  overflow-x: hidden;
+  /* 一覧画面でセクションのカルーセル等が原因で横方向にスクロールしないよう抑制。
+     overflow-x: hidden は祖先要素として sticky の動作を壊す挙動を一部ブラウザで
+     引き起こすため、 横方向だけクリッピングする `clip` を使う (sticky を保つ)。 */
+  overflow-x: clip;
   max-width: 100%;
 }
 body.viewer-body { touch-action: none; }
