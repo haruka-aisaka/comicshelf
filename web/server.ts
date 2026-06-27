@@ -40,9 +40,13 @@ export function buildApp(opts: {
     const filePath = `./web/public${path}`;
     try {
       const data = await Deno.readFile(filePath);
-      return new Response(data as BodyInit, {
-        headers: { "content-type": guessMime(path) },
-      });
+      const headers: Record<string, string> = { "content-type": guessMime(path) };
+      // sw.js は HTTP cache に乗ると更新が届かなくなるため no-cache を強制。
+      // SW 登録側も updateViaCache: "none" を指定しているが、 ヘッダでも明示する。
+      if (path === "/sw.js") {
+        headers["cache-control"] = "no-cache, no-store, must-revalidate";
+      }
+      return new Response(data as BodyInit, { headers });
     } catch {
       return c.notFound();
     }

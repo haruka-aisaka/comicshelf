@@ -36,18 +36,31 @@ sortSel.value = state.sort;
 if (filterSel) filterSel.value = state.status;
 if (searchInput) searchInput.value = state.query;
 
-// BFCache 復元時にも検索バー等を URL から再同期 (Safari 等で input.value が
-// 空にリセットされる挙動の対策)
+/** URL から state を読み直してフォームに反映 */
+function reloadStateFromUrl() {
+  const q = readQuery();
+  state.sort = q.sort;
+  state.directory = q.directory;
+  state.status = q.status;
+  state.query = q.query;
+  syncFormFromState();
+}
+
+// BFCache 復元時にフォームを URL から再同期 (iOS Safari で input.value が
+// 空にリセットされる挙動の対策)。 iOS Safari の form auto-restore は
+// pageshow より遅れて動く場合があるため、 多段で再試行する。
 window.addEventListener("pageshow", (e) => {
-  // 初回 navigate は init で sync 済みなので、 persisted=true (BFCache) の時のみ実行
   if (e.persisted) {
-    // URL は history.back で復元済みなので state を読み直す
-    const q = readQuery();
-    state.sort = q.sort;
-    state.directory = q.directory;
-    state.status = q.status;
-    state.query = q.query;
-    syncFormFromState();
+    reloadStateFromUrl();
+    setTimeout(reloadStateFromUrl, 50);
+    setTimeout(reloadStateFromUrl, 200);
+  }
+});
+
+// PWA をバックグラウンドから戻した時にも、 入力欄の状態を URL に合わせる
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    reloadStateFromUrl();
   }
 });
 
