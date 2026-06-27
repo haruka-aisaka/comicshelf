@@ -1,5 +1,6 @@
 import type { Database } from "@db/sqlite";
 import type { Book, ReadState, ReadStatusFilter, SortKey } from "../types.ts";
+import type { ComicInfo } from "../comicinfo/parser.ts";
 
 /** DBから取得した生の書籍行 (snake_case) */
 interface BookRow {
@@ -296,6 +297,217 @@ export function getReadState(db: Database, bookId: number): ReadState | null {
     finished: row.finished === 1,
     updatedAt: row.updated_at,
   };
+}
+
+/** comic_info テーブルの 1 行 (snake_case) */
+interface ComicInfoRow {
+  book_id: number;
+  title: string | null;
+  series: string | null;
+  number: string | null;
+  count: number | null;
+  volume: number | null;
+  summary: string | null;
+  notes: string | null;
+  year: number | null;
+  month: number | null;
+  day: number | null;
+  writer: string | null;
+  penciller: string | null;
+  inker: string | null;
+  colorist: string | null;
+  letterer: string | null;
+  cover_artist: string | null;
+  editor: string | null;
+  translator: string | null;
+  publisher: string | null;
+  imprint: string | null;
+  genre: string | null;
+  tags: string | null;
+  web: string | null;
+  page_count: number | null;
+  language_iso: string | null;
+  format: string | null;
+  black_and_white: string | null;
+  manga: string | null;
+  characters: string | null;
+  teams: string | null;
+  locations: string | null;
+  scan_information: string | null;
+  story_arc: string | null;
+  story_arc_number: string | null;
+  series_group: string | null;
+  age_rating: string | null;
+  updated_at: number;
+}
+
+function rowToComicInfo(r: ComicInfoRow): ComicInfo {
+  const info: ComicInfo = {};
+  if (r.title !== null) info.title = r.title;
+  if (r.series !== null) info.series = r.series;
+  if (r.number !== null) info.number = r.number;
+  if (r.count !== null) info.count = r.count;
+  if (r.volume !== null) info.volume = r.volume;
+  if (r.summary !== null) info.summary = r.summary;
+  if (r.notes !== null) info.notes = r.notes;
+  if (r.year !== null) info.year = r.year;
+  if (r.month !== null) info.month = r.month;
+  if (r.day !== null) info.day = r.day;
+  if (r.writer !== null) info.writer = r.writer;
+  if (r.penciller !== null) info.penciller = r.penciller;
+  if (r.inker !== null) info.inker = r.inker;
+  if (r.colorist !== null) info.colorist = r.colorist;
+  if (r.letterer !== null) info.letterer = r.letterer;
+  if (r.cover_artist !== null) info.coverArtist = r.cover_artist;
+  if (r.editor !== null) info.editor = r.editor;
+  if (r.translator !== null) info.translator = r.translator;
+  if (r.publisher !== null) info.publisher = r.publisher;
+  if (r.imprint !== null) info.imprint = r.imprint;
+  if (r.genre !== null) info.genre = safeParseStringArray(r.genre);
+  if (r.tags !== null) info.tags = safeParseStringArray(r.tags);
+  if (r.web !== null) info.web = r.web;
+  if (r.page_count !== null) info.pageCount = r.page_count;
+  if (r.language_iso !== null) info.languageIso = r.language_iso;
+  if (r.format !== null) info.format = r.format;
+  if (r.black_and_white !== null) {
+    info.blackAndWhite = r.black_and_white as ComicInfo["blackAndWhite"];
+  }
+  if (r.manga !== null) info.manga = r.manga as ComicInfo["manga"];
+  if (r.characters !== null) info.characters = r.characters;
+  if (r.teams !== null) info.teams = r.teams;
+  if (r.locations !== null) info.locations = r.locations;
+  if (r.scan_information !== null) info.scanInformation = r.scan_information;
+  if (r.story_arc !== null) info.storyArc = r.story_arc;
+  if (r.story_arc_number !== null) info.storyArcNumber = r.story_arc_number;
+  if (r.series_group !== null) info.seriesGroup = r.series_group;
+  if (r.age_rating !== null) info.ageRating = r.age_rating;
+  return info;
+}
+
+function safeParseStringArray(json: string): string[] | undefined {
+  try {
+    const v = JSON.parse(json);
+    if (Array.isArray(v) && v.every((x) => typeof x === "string")) return v;
+  } catch { /* fall through */ }
+  return undefined;
+}
+
+/** ComicInfo メタデータの取得 (なければ null) */
+export function getComicInfo(db: Database, bookId: number): ComicInfo | null {
+  const row = db
+    .prepare("SELECT * FROM comic_info WHERE book_id = ?")
+    .get<ComicInfoRow>(bookId);
+  return row ? rowToComicInfo(row) : null;
+}
+
+/** ComicInfo メタデータの Upsert (インデクサーから呼ばれる) */
+export function upsertComicInfo(
+  db: Database,
+  bookId: number,
+  info: ComicInfo,
+  now: number,
+): void {
+  db.prepare(`
+    INSERT INTO comic_info (
+      book_id, title, series, number, count, volume,
+      summary, notes, year, month, day,
+      writer, penciller, inker, colorist, letterer, cover_artist, editor, translator,
+      publisher, imprint, genre, tags,
+      web, page_count, language_iso, format, black_and_white, manga,
+      characters, teams, locations, scan_information,
+      story_arc, story_arc_number, series_group, age_rating, updated_at
+    ) VALUES (
+      :book_id, :title, :series, :number, :count, :volume,
+      :summary, :notes, :year, :month, :day,
+      :writer, :penciller, :inker, :colorist, :letterer, :cover_artist, :editor, :translator,
+      :publisher, :imprint, :genre, :tags,
+      :web, :page_count, :language_iso, :format, :black_and_white, :manga,
+      :characters, :teams, :locations, :scan_information,
+      :story_arc, :story_arc_number, :series_group, :age_rating, :updated_at
+    )
+    ON CONFLICT(book_id) DO UPDATE SET
+      title = excluded.title,
+      series = excluded.series,
+      number = excluded.number,
+      count = excluded.count,
+      volume = excluded.volume,
+      summary = excluded.summary,
+      notes = excluded.notes,
+      year = excluded.year,
+      month = excluded.month,
+      day = excluded.day,
+      writer = excluded.writer,
+      penciller = excluded.penciller,
+      inker = excluded.inker,
+      colorist = excluded.colorist,
+      letterer = excluded.letterer,
+      cover_artist = excluded.cover_artist,
+      editor = excluded.editor,
+      translator = excluded.translator,
+      publisher = excluded.publisher,
+      imprint = excluded.imprint,
+      genre = excluded.genre,
+      tags = excluded.tags,
+      web = excluded.web,
+      page_count = excluded.page_count,
+      language_iso = excluded.language_iso,
+      format = excluded.format,
+      black_and_white = excluded.black_and_white,
+      manga = excluded.manga,
+      characters = excluded.characters,
+      teams = excluded.teams,
+      locations = excluded.locations,
+      scan_information = excluded.scan_information,
+      story_arc = excluded.story_arc,
+      story_arc_number = excluded.story_arc_number,
+      series_group = excluded.series_group,
+      age_rating = excluded.age_rating,
+      updated_at = excluded.updated_at
+  `).run({
+    book_id: bookId,
+    title: info.title ?? null,
+    series: info.series ?? null,
+    number: info.number ?? null,
+    count: info.count ?? null,
+    volume: info.volume ?? null,
+    summary: info.summary ?? null,
+    notes: info.notes ?? null,
+    year: info.year ?? null,
+    month: info.month ?? null,
+    day: info.day ?? null,
+    writer: info.writer ?? null,
+    penciller: info.penciller ?? null,
+    inker: info.inker ?? null,
+    colorist: info.colorist ?? null,
+    letterer: info.letterer ?? null,
+    cover_artist: info.coverArtist ?? null,
+    editor: info.editor ?? null,
+    translator: info.translator ?? null,
+    publisher: info.publisher ?? null,
+    imprint: info.imprint ?? null,
+    genre: info.genre ? JSON.stringify(info.genre) : null,
+    tags: info.tags ? JSON.stringify(info.tags) : null,
+    web: info.web ?? null,
+    page_count: info.pageCount ?? null,
+    language_iso: info.languageIso ?? null,
+    format: info.format ?? null,
+    black_and_white: info.blackAndWhite ?? null,
+    manga: info.manga ?? null,
+    characters: info.characters ?? null,
+    teams: info.teams ?? null,
+    locations: info.locations ?? null,
+    scan_information: info.scanInformation ?? null,
+    story_arc: info.storyArc ?? null,
+    story_arc_number: info.storyArcNumber ?? null,
+    series_group: info.seriesGroup ?? null,
+    age_rating: info.ageRating ?? null,
+    updated_at: now,
+  });
+}
+
+/** ComicInfo の削除 (ZIP から ComicInfo.xml が消えた場合用) */
+export function deleteComicInfo(db: Database, bookId: number): void {
+  db.prepare("DELETE FROM comic_info WHERE book_id = ?").run(bookId);
 }
 
 /** 読書状態の Upsert */

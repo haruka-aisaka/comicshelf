@@ -1,7 +1,7 @@
 {
   "tasks": {
-    "check": "deno check src/ web/server.ts web/routes/ tests/db tests/indexer tests/reader tests/web tests/_helpers",
-    "test": "deno test -A tests/db tests/indexer tests/reader tests/web",
+    "check": "deno check src/ web/server.ts web/routes/ tests/db tests/indexer tests/reader tests/web tests/_helpers tests/comicinfo",
+    "test": "deno test -A tests/db tests/indexer tests/reader tests/web tests/comicinfo",
     "test:e2e": "deno test -A --no-check tests/e2e/",
     "web": "deno run -A --watch web/server.ts",
     "index": "deno run -A src/indexer/cli.ts",

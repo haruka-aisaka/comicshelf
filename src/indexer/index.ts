@@ -1,10 +1,15 @@
 import type { Database } from "@db/sqlite";
+import { join } from "@std/path";
 import { scanLibrary, type ScanOptions, titleFromFilename } from "./scanner.ts";
 import {
   deleteBookByPath,
+  deleteComicInfo,
   listAllBookPaths,
   upsertBook,
+  upsertComicInfo,
 } from "../db/repository.ts";
+import { readComicInfoXml } from "../reader/archive.ts";
+import { parseComicInfo } from "../comicinfo/parser.ts";
 
 export interface IndexStats {
   /** 検出したファイル総数 */
@@ -13,6 +18,8 @@ export interface IndexStats {
   upserted: number;
   /** ファイル消失で削除した件数 */
   removed: number;
+  /** ComicInfo.xml を取り込めた件数 */
+  comicInfoImported: number;
   /** スキャンに失敗したルート (権限エラー等) */
   failedRoots: string[];
 }
@@ -39,7 +46,13 @@ export interface IndexOptions extends ScanOptions {
  */
 export async function reindex(db: Database, opts: IndexOptions): Promise<IndexStats> {
   const now = opts.now ?? (() => Math.floor(Date.now() / 1000));
-  const stats: IndexStats = { scanned: 0, upserted: 0, removed: 0, failedRoots: [] };
+  const stats: IndexStats = {
+    scanned: 0,
+    upserted: 0,
+    removed: 0,
+    comicInfoImported: 0,
+    failedRoots: [],
+  };
 
   const seenPaths = new Set<string>();
 
@@ -48,7 +61,7 @@ export async function reindex(db: Database, opts: IndexOptions): Promise<IndexSt
       for await (const f of scanLibrary(root, { extensions: opts.extensions })) {
         stats.scanned++;
         seenPaths.add(f.relativePath);
-        upsertBook(db, {
+        const book = upsertBook(db, {
           path: f.relativePath,
           filename: f.filename,
           title: titleFromFilename(f.filename),
@@ -58,6 +71,23 @@ export async function reindex(db: Database, opts: IndexOptions): Promise<IndexSt
           pageCount: null,
         }, now());
         stats.upserted++;
+        // ComicInfo.xml の取り込み (失敗しても他の書籍への影響を出さない)
+        const absPath = join(f.root, f.relativePath);
+        try {
+          const xml = await readComicInfoXml(absPath);
+          if (xml) {
+            const info = parseComicInfo(xml);
+            if (info) {
+              upsertComicInfo(db, book.id, info, now());
+              stats.comicInfoImported++;
+            }
+          } else {
+            // 以前あった ComicInfo.xml が消えた可能性 → DB からも削除
+            deleteComicInfo(db, book.id);
+          }
+        } catch (e) {
+          console.warn(`[indexer] ComicInfo.xml 読込失敗 ${f.relativePath}:`, e);
+        }
       }
     } catch (err) {
       console.error(`[indexer] failed to scan root ${root}:`, err);

@@ -100,6 +100,26 @@ export function readFirstPage(filePath: string): Promise<PageData | null> {
 }
 
 /**
+ * アーカイブ内の `ComicInfo.xml` を読み込んで UTF-8 string で返す。
+ * 慣習に従い、 ルート直下の `ComicInfo.xml` (大小文字区別なし) のみを対象とする。
+ * 存在しなければ null。
+ */
+export async function readComicInfoXml(filePath: string): Promise<string | null> {
+  const reader = await openReader(filePath);
+  try {
+    const entries = await reader.getEntries();
+    const target = entries.find((e) =>
+      !e.directory && e.filename.toLowerCase() === "comicinfo.xml"
+    );
+    if (!target || !("getData" in target) || !target.getData) return null;
+    const blob = await target.getData(new BlobWriter());
+    return await blob.text();
+  } finally {
+    await reader.close();
+  }
+}
+
+/**
  * 自然順比較。文字列中の数値部分を数値として比較する。
  * 例: "page2.jpg" < "page10.jpg"
  */

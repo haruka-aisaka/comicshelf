@@ -4,6 +4,7 @@ import {
   countPages,
   listPages,
   naturalCompare,
+  readComicInfoXml,
   readFirstPage,
   readPage,
 } from "../../src/reader/archive.ts";
@@ -107,5 +108,38 @@ Deno.test("listPages: サブディレクトリ内画像も拾う", async () => {
       "ch1/002.jpg",
       "ch2/001.jpg",
     ]);
+  });
+});
+
+Deno.test("readComicInfoXml: ルート直下の ComicInfo.xml を返す", async () => {
+  await withTempDir(async (dir) => {
+    const cbz = join(dir, "with-meta.cbz");
+    const xml = `<?xml version="1.0"?><ComicInfo><Title>テスト</Title></ComicInfo>`;
+    await writeCbz(cbz, [
+      { name: "001.jpg", data: fakeJpegBytes() },
+      { name: "ComicInfo.xml", data: xml },
+    ]);
+    const got = await readComicInfoXml(cbz);
+    assertEquals(got, xml);
+  });
+});
+
+Deno.test("readComicInfoXml: 大小文字違い (comicinfo.XML) もマッチ", async () => {
+  await withTempDir(async (dir) => {
+    const cbz = join(dir, "lc.cbz");
+    const xml = `<ComicInfo><Title>X</Title></ComicInfo>`;
+    await writeCbz(cbz, [
+      { name: "001.jpg", data: fakeJpegBytes() },
+      { name: "comicinfo.XML", data: xml },
+    ]);
+    assertEquals(await readComicInfoXml(cbz), xml);
+  });
+});
+
+Deno.test("readComicInfoXml: ComicInfo.xml がなければ null", async () => {
+  await withTempDir(async (dir) => {
+    const cbz = join(dir, "no-meta.cbz");
+    await writeCbz(cbz, [{ name: "001.jpg", data: fakeJpegBytes() }]);
+    assertEquals(await readComicInfoXml(cbz), null);
   });
 });

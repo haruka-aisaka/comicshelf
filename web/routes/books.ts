@@ -4,6 +4,7 @@ import type { LibraryService } from "../../src/library.ts";
 import type { ReadStatusFilter, SortKey } from "../../src/types.ts";
 import {
   getBookById,
+  getComicInfo,
   getReadState,
   listBooks,
   listContinueReading,
@@ -69,7 +70,8 @@ export function buildBooksRoutes(deps: BooksDeps): Hono {
     const book = getBookById(deps.db, id);
     if (!book) return c.json({ error: "not found" }, 404);
     const readState = getReadState(deps.db, id);
-    return c.json({ book, readState });
+    const comicInfo = getComicInfo(deps.db, id);
+    return c.json({ book, readState, comicInfo });
   });
 
   app.get("/books/:id/pages", async (c) => {

@@ -4,7 +4,7 @@ import { Database } from "@db/sqlite";
  * 現在のスキーマバージョン。
  * マイグレーション追加時にインクリメントする。
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /**
  * テーブル定義 (バージョン1)。
@@ -44,6 +44,57 @@ const SCHEMA_V1 = `
 `;
 
 /**
+ * バージョン 2: ComicInfo.xml のメタデータを格納。
+ * 1書籍1行 (book_id PK)。 値は ComicInfo.xml に書かれた内容を反映 (アプリ側で編集はしない)。
+ * 配列フィールド (genre/tags) は JSON-encoded string で格納し、 検索時に LIKE する。
+ */
+const SCHEMA_V2 = `
+  CREATE TABLE IF NOT EXISTS comic_info (
+    book_id INTEGER PRIMARY KEY,
+    title TEXT,
+    series TEXT,
+    number TEXT,
+    count INTEGER,
+    volume INTEGER,
+    summary TEXT,
+    notes TEXT,
+    year INTEGER,
+    month INTEGER,
+    day INTEGER,
+    writer TEXT,
+    penciller TEXT,
+    inker TEXT,
+    colorist TEXT,
+    letterer TEXT,
+    cover_artist TEXT,
+    editor TEXT,
+    translator TEXT,
+    publisher TEXT,
+    imprint TEXT,
+    genre TEXT,            -- JSON 配列文字列
+    tags TEXT,             -- JSON 配列文字列
+    web TEXT,
+    page_count INTEGER,
+    language_iso TEXT,
+    format TEXT,
+    black_and_white TEXT,
+    manga TEXT,
+    characters TEXT,
+    teams TEXT,
+    locations TEXT,
+    scan_information TEXT,
+    story_arc TEXT,
+    story_arc_number TEXT,
+    series_group TEXT,
+    age_rating TEXT,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_comic_info_series ON comic_info(series);
+  CREATE INDEX IF NOT EXISTS idx_comic_info_writer ON comic_info(writer);
+`;
+
+/**
  * SQLite接続を開きスキーマを適用する。
  * パス `:memory:` でインメモリ接続。
  */
@@ -58,12 +109,17 @@ export function openDatabase(path: string): Database {
 function applyMigrations(db: Database): void {
   db.exec(SCHEMA_V1);
   const current = getSchemaVersion(db);
+  // v2: comic_info テーブル追加。 IF NOT EXISTS なので何度実行しても安全。
+  db.exec(SCHEMA_V2);
   if (current === null) {
     db.prepare("INSERT INTO schema_meta(key, value) VALUES('version', ?)").run(
       String(SCHEMA_VERSION),
     );
+  } else if (current < SCHEMA_VERSION) {
+    db.prepare("UPDATE schema_meta SET value = ? WHERE key = 'version'").run(
+      String(SCHEMA_VERSION),
+    );
   }
-  // 将来のバージョンアップ時は current の値を見て段階的にマイグレーションする
 }
 
 function getSchemaVersion(db: Database): number | null {

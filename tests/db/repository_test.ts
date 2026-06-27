@@ -2,7 +2,9 @@ import { assertEquals, assertExists, assertFalse } from "@std/assert";
 import { openDatabase } from "../../src/db/schema.ts";
 import {
   deleteBookByPath,
+  deleteComicInfo,
   getBookById,
+  getComicInfo,
   getReadState,
   listAllBookPaths,
   listBooks,
@@ -12,6 +14,7 @@ import {
   listRecentlyFinished,
   updatePageCount,
   upsertBook,
+  upsertComicInfo,
   upsertReadState,
 } from "../../src/db/repository.ts";
 import type { BookUpsertInput } from "../../src/db/repository.ts";
@@ -244,4 +247,64 @@ Deno.test("ON DELETE CASCADE: 書籍削除でread_stateも消える", () => {
   upsertReadState(db, b.id, { lastPage: 5 }, 100);
   deleteBookByPath(db, b.path);
   assertEquals(getReadState(db, b.id), null);
+});
+
+Deno.test("upsertComicInfo / getComicInfo: 往復で値が一致", () => {
+  const db = openDatabase(":memory:");
+  const b = upsertBook(db, makeBook(), 1);
+  upsertComicInfo(db, b.id, {
+    title: "第1話",
+    series: "NARUTO",
+    number: "1",
+    volume: 1,
+    writer: "岸本斉史",
+    penciller: "岸本斉史",
+    genre: ["少年", "バトル"],
+    tags: ["忍者", "アクション"],
+    pageCount: 192,
+    languageIso: "ja",
+    manga: "YesAndRightToLeft",
+    publisher: "集英社",
+    year: 1999,
+  }, 100);
+  const got = getComicInfo(db, b.id);
+  assertEquals(got?.title, "第1話");
+  assertEquals(got?.series, "NARUTO");
+  assertEquals(got?.number, "1");
+  assertEquals(got?.volume, 1);
+  assertEquals(got?.writer, "岸本斉史");
+  assertEquals(got?.genre, ["少年", "バトル"]);
+  assertEquals(got?.tags, ["忍者", "アクション"]);
+  assertEquals(got?.pageCount, 192);
+  assertEquals(got?.languageIso, "ja");
+  assertEquals(got?.manga, "YesAndRightToLeft");
+});
+
+Deno.test("upsertComicInfo: 2 度目は値が更新される", () => {
+  const db = openDatabase(":memory:");
+  const b = upsertBook(db, makeBook(), 1);
+  upsertComicInfo(db, b.id, { title: "old", tags: ["a"] }, 100);
+  upsertComicInfo(db, b.id, { title: "new", tags: ["b", "c"] }, 200);
+  const got = getComicInfo(db, b.id);
+  assertEquals(got?.title, "new");
+  assertEquals(got?.tags, ["b", "c"]);
+});
+
+Deno.test("deleteComicInfo: 対象行のみ削除される", () => {
+  const db = openDatabase(":memory:");
+  const a = upsertBook(db, makeBook({ path: "a.cbz" }), 1);
+  const b = upsertBook(db, makeBook({ path: "b.cbz" }), 2);
+  upsertComicInfo(db, a.id, { title: "A" }, 100);
+  upsertComicInfo(db, b.id, { title: "B" }, 100);
+  deleteComicInfo(db, a.id);
+  assertEquals(getComicInfo(db, a.id), null);
+  assertEquals(getComicInfo(db, b.id)?.title, "B");
+});
+
+Deno.test("ON DELETE CASCADE: 書籍削除で comic_info も消える", () => {
+  const db = openDatabase(":memory:");
+  const b = upsertBook(db, makeBook(), 1);
+  upsertComicInfo(db, b.id, { title: "X", tags: ["t1"] }, 100);
+  deleteBookByPath(db, b.path);
+  assertEquals(getComicInfo(db, b.id), null);
 });
