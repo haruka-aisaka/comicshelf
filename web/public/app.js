@@ -300,6 +300,26 @@ if (clearFiltersBtn) {
 
 const SCROLL_KEY = "comicshelf.listScrollY";
 
+/**
+ * 任意のクエリで在画面 (= 一覧画面) を絞り込む。
+ * 作者やタグの chip クリックから呼ばれる。 URL/検索バー/state を全部同期、
+ * scroll を先頭に戻して loadBooks。
+ */
+function applyFilterByQuery(q) {
+  state.query = q;
+  state.directory = "";
+  state.status = "all";
+  if (searchInput) searchInput.value = q;
+  if (filterSel) filterSel.value = "all";
+  document.querySelectorAll(".dir-link").forEach((el) => el.classList.remove("active"));
+  const allLink = document.querySelector('.dir-link[data-dir=""]');
+  if (allLink) allLink.classList.add("active");
+  writeQuery();
+  loadBooks();
+  loadSections();
+  window.scrollTo({ top: 0, behavior: "instant" });
+}
+
 function makeCard(book) {
   const card = document.createElement("div");
   card.className = "card";
@@ -327,11 +347,21 @@ function makeCard(book) {
   card.appendChild(title);
 
   // 作者 (ComicInfo の writer or penciller があれば card 下部に小さく表示)
+  // クリックで現画面の検索バーに代入し、 在画面でその作者だけに絞り込む
   const author = book.comicInfo?.writer ?? book.comicInfo?.penciller;
   if (author) {
     const sub = document.createElement("div");
     sub.className = "card-author";
-    sub.textContent = author;
+    const link = document.createElement("a");
+    link.className = "card-author-link";
+    link.href = `/?q=${encodeURIComponent(author)}`;
+    link.textContent = author;
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      applyFilterByQuery(author);
+    });
+    sub.appendChild(link);
     card.appendChild(sub);
   }
 

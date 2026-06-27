@@ -728,12 +728,33 @@ function applyMetaPanel(comicInfo) {
       row.setAttribute("hidden", "");
     }
   };
-  setText("series", comicInfo.series ?? "");
-  // 作者は writer 優先、 同じ値の penciller は重複扱いしない
+  /** クリックで一覧へ遷移して絞り込む chip を value 列に並べる */
+  const setChips = (field, values) => {
+    const row = panel.querySelector(`.meta-row[data-field="${field}"]`);
+    if (!row) return;
+    const valueEl = row.querySelector(".meta-value");
+    if (!valueEl) return;
+    valueEl.innerHTML = "";
+    const arr = values.filter(Boolean);
+    if (arr.length === 0) {
+      row.setAttribute("hidden", "");
+      return;
+    }
+    for (const v of arr) {
+      const chip = document.createElement("a");
+      chip.className = "meta-tag";
+      chip.href = `/?q=${encodeURIComponent(v)}`;
+      chip.textContent = v;
+      valueEl.appendChild(chip);
+    }
+    row.removeAttribute("hidden");
+  };
+  setChips("series", comicInfo.series ? [comicInfo.series] : []);
+  // 作者: writer 優先、 penciller が同名なら省く。 chip 化して一覧の絞り込みへリンク
   const writer = comicInfo.writer ?? "";
   const penciller = comicInfo.penciller ?? "";
-  const authorParts = [writer, penciller === writer ? "" : penciller].filter(Boolean);
-  setText("author", authorParts.join(" / "));
+  const authors = penciller === writer ? [writer] : [writer, penciller];
+  setChips("author", authors);
 
   const tagsRow = panel.querySelector('.meta-row[data-field="tags"]');
   const tagsEl = panel.querySelector(".meta-tags");
