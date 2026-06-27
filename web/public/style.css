@@ -375,6 +375,81 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   font-size: 12px;
   word-break: break-all;
 }
+.reindex-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  background: rgba(122, 162, 247, 0.08);
+  border: 1px solid rgba(122, 162, 247, 0.4);
+  border-radius: 8px;
+}
+.reindex-banner[hidden] { display: none; }
+.reindex-banner.done {
+  background: rgba(46, 160, 67, 0.08);
+  border-color: rgba(46, 160, 67, 0.4);
+}
+.reindex-banner-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.reindex-banner-title {
+  flex: 1;
+  font-weight: 600;
+  color: var(--text);
+}
+.reindex-banner-elapsed {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.reindex-banner-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(122, 162, 247, 0.25);
+  border-top-color: rgba(122, 162, 247, 1);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.reindex-banner.done .reindex-banner-spinner {
+  border-color: rgba(46, 160, 67, 0.4);
+  border-top-color: rgba(46, 160, 67, 1);
+  animation: none;
+}
+.reindex-banner-progress {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.reindex-banner-bar {
+  height: 100%;
+  width: 0%;
+  background: rgba(122, 162, 247, 0.85);
+  transition: width 0.3s ease;
+}
+.reindex-banner.done .reindex-banner-bar {
+  background: rgba(46, 160, 67, 0.85);
+}
+.reindex-banner-bar.indeterminate {
+  /* 総数未知のときに左右に流れるバー */
+  width: 30%;
+  animation: indeterminateBar 1.4s ease-in-out infinite;
+}
+@keyframes indeterminateBar {
+  0% { margin-left: 0%; width: 20%; }
+  50% { margin-left: 30%; width: 40%; }
+  100% { margin-left: 100%; width: 20%; }
+}
+.reindex-banner-detail {
+  font-size: 13px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 .settings-meta {
   display: grid;
   grid-template-columns: max-content 1fr;

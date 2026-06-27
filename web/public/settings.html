@@ -25,6 +25,17 @@
         ライブラリディレクトリは <code id="library-roots">読み込み中…</code> です。
         起動時と <code id="watch-interval">-</code>秒ごとに自動でインデックスが更新されます。
       </p>
+      <div id="reindex-banner" class="reindex-banner" hidden>
+        <div class="reindex-banner-header">
+          <span class="reindex-banner-spinner" aria-hidden="true"></span>
+          <span class="reindex-banner-title">インデックス中</span>
+          <span id="reindex-banner-elapsed" class="reindex-banner-elapsed">0 秒</span>
+        </div>
+        <div class="reindex-banner-progress">
+          <div id="reindex-banner-bar" class="reindex-banner-bar"></div>
+        </div>
+        <div id="reindex-banner-detail" class="reindex-banner-detail">準備中…</div>
+      </div>
       <dl class="settings-meta">
         <dt>最終実行</dt><dd id="last-run">—</dd>
         <dt>追加/更新</dt><dd id="last-upserted">—</dd>

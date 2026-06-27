@@ -6,6 +6,19 @@ const $ = (sel) => /** @type {HTMLElement} */ (document.querySelector(sel));
 
 const reindexBtn = /** @type {HTMLButtonElement} */ ($("#reindex"));
 const reindexStatus = $("#reindex-status");
+const reindexBanner = /** @type {HTMLElement | null} */ (document.querySelector("#reindex-banner"));
+const reindexBannerBar = /** @type {HTMLElement | null} */ (
+  document.querySelector("#reindex-banner-bar")
+);
+const reindexBannerElapsed = /** @type {HTMLElement | null} */ (
+  document.querySelector("#reindex-banner-elapsed")
+);
+const reindexBannerDetail = /** @type {HTMLElement | null} */ (
+  document.querySelector("#reindex-banner-detail")
+);
+const reindexBannerTitle = /** @type {HTMLElement | null} */ (
+  document.querySelector(".reindex-banner-title")
+);
 const lastRun = $("#last-run");
 const lastUpserted = $("#last-upserted");
 const lastRemoved = $("#last-removed");
@@ -66,6 +79,40 @@ let pollTimer;
 /** 直前の status snapshot (完了検知用) */
 let prevRunning = false;
 
+/**
+ * @param {{ title: string, elapsedSec: number, scanned: number,
+ *   comicInfoImported: number, totalEstimate: number, done: boolean }} info
+ */
+function showBanner(info) {
+  if (!reindexBanner) return;
+  reindexBanner.removeAttribute("hidden");
+  reindexBanner.classList.toggle("done", info.done);
+  if (reindexBannerTitle) reindexBannerTitle.textContent = info.title;
+  if (reindexBannerElapsed) reindexBannerElapsed.textContent = `${info.elapsedSec} 秒`;
+  if (reindexBannerDetail) {
+    const denomText = info.totalEstimate > 0 ? ` / 約 ${info.totalEstimate} 件` : "";
+    reindexBannerDetail.textContent =
+      `${info.scanned} 件処理済み${denomText} ・ ComicInfo 取り込み ${info.comicInfoImported} 件`;
+  }
+  if (reindexBannerBar) {
+    if (info.totalEstimate > 0) {
+      reindexBannerBar.classList.remove("indeterminate");
+      const ratio = Math.min(100, (info.scanned / info.totalEstimate) * 100);
+      reindexBannerBar.style.width = `${info.done ? 100 : ratio}%`;
+    } else {
+      // 総数見込みがないとき (初回など) は indeterminate アニメーション
+      reindexBannerBar.classList.add("indeterminate");
+      reindexBannerBar.style.width = "";
+    }
+  }
+}
+
+function hideBanner() {
+  if (!reindexBanner) return;
+  reindexBanner.setAttribute("hidden", "");
+  reindexBanner.classList.remove("done");
+}
+
 function startStatusPolling() {
   if (pollTimer !== undefined) return;
   pollTimer = setInterval(loadStatus, 1000);
@@ -96,27 +143,52 @@ async function loadStatus() {
       nextRun.textContent = data.running ? "実行中" : "—";
     }
 
-    // インデックス実行中の進捗表示
+    // インデックス実行中の進捗表示 (バナー + ボタン横テキスト)
     if (data.running && data.currentRun) {
       const elapsedSec = Math.floor((Date.now() - data.currentRun.startedAt) / 1000);
-      const ci = data.currentRun.comicInfoImported;
+      const scanned = data.currentRun.scanned ?? 0;
+      const ci = data.currentRun.comicInfoImported ?? 0;
+      // 前回完了時の scanned を分母にして 進捗 % を表示 (なければ indeterminate)
+      const totalEstimate = data.lastResult?.scanned ?? 0;
+      showBanner({
+        title: "インデックス中",
+        elapsedSec,
+        scanned,
+        comicInfoImported: ci,
+        totalEstimate,
+        done: false,
+      });
       setStatus(
-        `インデックス中… ${data.currentRun.scanned} 件処理済み (${elapsedSec}s, ComicInfo ${ci})`,
+        `${scanned} 件処理済み (${elapsedSec}s, ComicInfo ${ci})`,
       );
       reindexBtn.disabled = true;
       startStatusPolling();
     } else if (prevRunning && !data.running) {
-      // running → 完了に変化したタイミングで通知
+      // running → 完了に変化したタイミング
       if (data.lastError) {
         setStatus(`エラー: ${data.lastError}`, "error");
+        hideBanner();
       } else if (data.lastResult) {
         const r = data.lastResult;
         setStatus(
           `完了: scanned=${r.scanned} upserted=${r.upserted} removed=${r.removed} ComicInfo=${r.comicInfoImported}`,
           "ok",
         );
+        // 完了バナーを 5 秒間表示してから消す
+        showBanner({
+          title: "完了",
+          elapsedSec: Math.floor(r.elapsedMs / 1000),
+          scanned: r.scanned,
+          comicInfoImported: r.comicInfoImported,
+          totalEstimate: r.scanned,
+          done: true,
+        });
+        setTimeout(hideBanner, 5000);
       }
       reindexBtn.disabled = false;
+    } else if (!data.running) {
+      // 通常状態 (実行中でない) — バナーは出さない
+      hideBanner();
     }
     prevRunning = data.running;
 
