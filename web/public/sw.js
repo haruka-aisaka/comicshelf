@@ -6,7 +6,7 @@
  *  - /api/ は network のみ (オンライン時のみ動作)、 サムネ /api/books/*/thumbnail は stale-while-revalidate
  */
 
-const CACHE_VERSION = "comicshelf-v1";
+const CACHE_VERSION = "comicshelf-v2";
 const THUMB_CACHE = "comicshelf-thumb-v1";
 /** サムネキャッシュの最大保持数。 LRU 風に超過分を古い順に削除。 */
 const THUMB_CACHE_MAX_ENTRIES = 300;
@@ -92,17 +92,21 @@ self.addEventListener("fetch", (event) => {
   // それ以外の /api/ は network のみ (オフライン時はエラー)
   if (url.pathname.startsWith("/api/")) return;
 
-  // 静的アセット: cache-first
+  // 静的アセット: stale-while-revalidate
+  // (cache があれば即返却し、 同時に background で新版を取得して次回に備える。
+  //  cache-first だとサーバ側で更新しても旧 JS/CSS を返し続け、 PWA 利用者が
+  //  古いコードのまま動く問題があるため)
   event.respondWith(
-    caches.match(req).then((cached) => {
-      if (cached) return cached;
-      return fetch(req).then((res) => {
-        if (res.ok && res.type === "basic") {
-          const copy = res.clone();
-          caches.open(CACHE_VERSION).then((cache) => cache.put(req, copy)).catch(() => {});
-        }
-        return res;
-      });
-    }),
+    caches.open(CACHE_VERSION).then((cache) =>
+      cache.match(req).then((cached) => {
+        const networkFetch = fetch(req).then((res) => {
+          if (res.ok && res.type === "basic") {
+            cache.put(req, res.clone()).catch(() => {});
+          }
+          return res;
+        }).catch(() => cached);
+        return cached || networkFetch;
+      })
+    ),
   );
 });
