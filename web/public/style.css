@@ -899,6 +899,10 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   flex-direction: column;
   gap: 10px;
   box-sizing: border-box;
+  /* タグが多い書籍でシートが画面のほぼ全体を覆わないよう、 高さ上限を 70dvh
+     (動的ビューポート、 iOS の URL バー伸縮にも追随)。 内部はメタパネルが
+     スクロールするので、 上下のシーク/設定行は常に見える */
+  max-height: 70dvh;
   /* スライドイン風 */
   animation: menuSlideUp 0.18s ease-out;
 }
@@ -917,6 +921,31 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   font-size: 13px;
+  /* シートの高さが頭打ちのとき、 ここをスクロール領域にする (上下の
+     メニュー行は固定で見え続ける) */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  /* 「下にもっとある」 のヒントとしての fade gradient。 スクロール最下端では
+     `is-bottom` クラスを付けて gradient を消す */
+  --fade-color: rgba(15, 17, 21, 0.95);
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0,
+    black calc(100% - 24px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black 0,
+    black calc(100% - 24px),
+    transparent 100%
+  );
+}
+.meta-panel.is-bottom {
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 .meta-panel[hidden] { display: none; }
 .meta-row { display: flex; gap: 10px; align-items: flex-start; }

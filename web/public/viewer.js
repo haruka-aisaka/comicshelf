@@ -331,6 +331,13 @@ function bindEvents() {
     if (Number.isFinite(n)) jumpTo(n, { align: false });
   });
   menuClose.addEventListener("click", () => hideMenuOverlay());
+  // メタパネルのスクロールで fade gradient の表示制御
+  const metaPanel = document.querySelector("#meta-panel");
+  if (metaPanel instanceof HTMLElement) {
+    metaPanel.addEventListener("scroll", () => updateMetaPanelFade(metaPanel), {
+      passive: true,
+    });
+  }
   // 枠外タップ (backdrop) でメニューを閉じる
   const menuBackdrop = document.querySelector("#menu-backdrop");
   if (menuBackdrop) {
@@ -796,6 +803,8 @@ function applyMetaPanel(comicInfo) {
   );
   if (anyVisible) panel.removeAttribute("hidden");
   else panel.setAttribute("hidden", "");
+  // 描画後にスクロール状態を更新 (内容変更で scrollHeight が変わるため)
+  if (panel instanceof HTMLElement) updateMetaPanelFade(panel);
 }
 
 /**
@@ -963,8 +972,21 @@ function showMenuOverlay() {
   menuOverlay.removeAttribute("hidden");
   const backdrop = document.querySelector("#menu-backdrop");
   if (backdrop) backdrop.removeAttribute("hidden");
+  // メタパネルのスクロール位置を上端にリセット + 下端 fade の表示状態を初期化
+  const panel = document.querySelector("#meta-panel");
+  if (panel instanceof HTMLElement) {
+    panel.scrollTop = 0;
+    updateMetaPanelFade(panel);
+  }
   // メニュー表示中は自動送りを止める (誤発火・操作中断を防ぐ)
   AutoAdvance.setSystemPaused(true);
+}
+
+/** メタパネルのスクロール状態に応じて is-bottom クラスを付け外し (fade の表示制御) */
+function updateMetaPanelFade(panel) {
+  // スクロールが最下端 (誤差 1px 以内) か、 そもそもスクロール不要なら fade を消す
+  const atBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight <= 1;
+  panel.classList.toggle("is-bottom", atBottom);
 }
 
 function hideMenuOverlay() {
