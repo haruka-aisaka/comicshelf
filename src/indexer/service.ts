@@ -8,7 +8,7 @@ import type { Database } from "@db/sqlite";
 import type { Config } from "../types.ts";
 import type { LibraryService } from "../library.ts";
 import { listAllBookIds } from "../db/repository.ts";
-import { type IndexStats, reindex } from "./index.ts";
+import { type IndexMode, type IndexStats, reindex } from "./index.ts";
 
 export interface IndexerRunResult extends IndexStats {
   elapsedMs: number;
@@ -34,8 +34,13 @@ export interface WarmupStatus {
 /** 現在進行中の reindex 情報 (running 中のみ非 null) */
 export interface CurrentRunStatus {
   startedAt: number;
-  /** これまでに走査した書籍数 (進捗表示用) */
+  mode: IndexMode;
+  /** これまでに走査した書籍数 (進捗表示用、 skip 含む) */
   scanned: number;
+  /** これまでに upsert した件数 (DB を更新した数) */
+  upserted: number;
+  /** 差分判定で skip された件数 */
+  skipped: number;
   /** これまでに ComicInfo.xml を取り込んだ件数 */
   comicInfoImported: number;
   /** 直近で処理中の書籍 (相対パス) */
@@ -109,19 +114,30 @@ export class IndexerService {
    * reindex完了後、 サムネWebPキャッシュの事前生成を裏で開始する。
    * 既にキャッシュ済みのものは即座にスキップされるため低コスト。
    */
-  async runOnce(): Promise<IndexerRunResult | null> {
+  async runOnce(mode: IndexMode = "incremental"): Promise<IndexerRunResult | null> {
     if (this._running) return null;
     this._running = true;
     const startedAt = this.now();
-    this._currentRun = { startedAt, scanned: 0, comicInfoImported: 0, currentFile: null };
+    this._currentRun = {
+      startedAt,
+      mode,
+      scanned: 0,
+      upserted: 0,
+      skipped: 0,
+      comicInfoImported: 0,
+      currentFile: null,
+    };
     try {
       const stats = await reindex(this.db, {
         roots: this.config.library.roots,
         extensions: this.config.library.extensions,
         now: () => Math.floor(this.now() / 1000),
+        mode,
         onProgress: (s) => {
           if (this._currentRun) {
             this._currentRun.scanned = s.scanned;
+            this._currentRun.upserted = s.upserted;
+            this._currentRun.skipped = s.skipped;
             this._currentRun.comicInfoImported = s.comicInfoImported;
             this._currentRun.currentFile = s.currentFile ?? null;
           }

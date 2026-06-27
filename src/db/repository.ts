@@ -83,6 +83,12 @@ export function getBookById(db: Database, id: number): Book | null {
   return row ? rowToBook(row) : null;
 }
 
+/** path検索 (差分インデックスで既存と比較するため) */
+export function getBookByPath(db: Database, path: string): Book | null {
+  const row = db.prepare("SELECT * FROM books WHERE path = ?").get<BookRow>(path);
+  return row ? rowToBook(row) : null;
+}
+
 /** 全パス取得 (インデクサーの差分計算用) */
 export function listAllBookPaths(db: Database): string[] {
   return db.prepare("SELECT path FROM books").all<{ path: string }>().map((r) => r.path);

@@ -31,7 +31,7 @@ Deno.test("reindex: 新規追加 → 削除検出 → 再追加 のサイクル"
     assertEquals(stats.failedRoots, []);
     assertEquals(listBooks(db).length, 2);
 
-    // 2回目: ファイルを1つ削除し再実行 → removed=1
+    // 2回目: ファイルを1つ削除し再実行 → removed=1, 残る vol-02 は変更なしで skip
     await Deno.remove(join(root, "series-a/vol-01.cbz"));
     stats = await reindex(db, {
       roots: [root],
@@ -39,7 +39,8 @@ Deno.test("reindex: 新規追加 → 削除検出 → 再追加 のサイクル"
       now: () => 2000,
     });
     assertEquals(stats.scanned, 1);
-    assertEquals(stats.upserted, 1);
+    assertEquals(stats.upserted, 0); // incremental: 変更なしは skip
+    assertEquals(stats.skipped, 1);
     assertEquals(stats.removed, 1);
     assertEquals(listBooks(db).length, 1);
 
@@ -136,6 +137,115 @@ Deno.test("reindex: CBZ 内の ComicInfo.xml を取り込んで DB に反映", a
 
     // ComicInfo.xml なしの本は null
     assertEquals(getComicInfo(db, withoutBook.id), null);
+  } finally {
+    db.close();
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("reindex: incremental モードで変更なしファイルは skip される", async () => {
+  const root = await Deno.makeTempDir({ prefix: "comicshelf-incremental-" });
+  const db = openDatabase(":memory:");
+  try {
+    // 初回 (full): 2 件取り込み
+    await writeCbz(join(root, "a.cbz"), [{ name: "001.jpg", data: fakeJpegBytes() }]);
+    await writeCbz(join(root, "b.cbz"), [{ name: "001.jpg", data: fakeJpegBytes() }]);
+    const initial = await reindex(db, {
+      roots: [root],
+      extensions: [".cbz"],
+      mode: "full",
+      now: () => 1000,
+    });
+    assertEquals(initial.scanned, 2);
+    assertEquals(initial.upserted, 2);
+    assertEquals(initial.skipped, 0);
+
+    // 2 回目 (incremental): 全件 skip
+    const second = await reindex(db, {
+      roots: [root],
+      extensions: [".cbz"],
+      mode: "incremental",
+      now: () => 2000,
+    });
+    assertEquals(second.scanned, 2);
+    assertEquals(second.skipped, 2);
+    assertEquals(second.upserted, 0);
+    assertEquals(second.comicInfoImported, 0);
+  } finally {
+    db.close();
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("reindex: incremental で 1 ファイルだけ更新されたら 1 件だけ upsert", async () => {
+  const root = await Deno.makeTempDir({ prefix: "comicshelf-incremental-2-" });
+  const db = openDatabase(":memory:");
+  try {
+    const aPath = join(root, "a.cbz");
+    const bPath = join(root, "b.cbz");
+    await writeCbz(aPath, [{ name: "001.jpg", data: fakeJpegBytes() }]);
+    await writeCbz(bPath, [{ name: "001.jpg", data: fakeJpegBytes() }]);
+    await reindex(db, { roots: [root], extensions: [".cbz"], mode: "full", now: () => 1000 });
+
+    // a.cbz の mtime を未来に進める (utimesSync)
+    const future = new Date(Date.now() + 60 * 60 * 1000);
+    await Deno.utime(aPath, future, future);
+    const stats = await reindex(db, {
+      roots: [root],
+      extensions: [".cbz"],
+      mode: "incremental",
+      now: () => 2000,
+    });
+    assertEquals(stats.scanned, 2);
+    assertEquals(stats.upserted, 1);
+    assertEquals(stats.skipped, 1);
+  } finally {
+    db.close();
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("reindex: incremental でも削除検出は動く", async () => {
+  const root = await Deno.makeTempDir({ prefix: "comicshelf-incremental-del-" });
+  const db = openDatabase(":memory:");
+  try {
+    await writeCbz(join(root, "a.cbz"), [{ name: "001.jpg", data: fakeJpegBytes() }]);
+    await writeCbz(join(root, "b.cbz"), [{ name: "001.jpg", data: fakeJpegBytes() }]);
+    await reindex(db, { roots: [root], extensions: [".cbz"], mode: "full", now: () => 1000 });
+
+    await Deno.remove(join(root, "b.cbz"));
+    const stats = await reindex(db, {
+      roots: [root],
+      extensions: [".cbz"],
+      mode: "incremental",
+      now: () => 2000,
+    });
+    assertEquals(stats.scanned, 1);
+    assertEquals(stats.skipped, 1);
+    assertEquals(stats.upserted, 0);
+    assertEquals(stats.removed, 1);
+  } finally {
+    db.close();
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("reindex: full モードでは skipped は常に 0", async () => {
+  const root = await Deno.makeTempDir({ prefix: "comicshelf-full-" });
+  const db = openDatabase(":memory:");
+  try {
+    await writeCbz(join(root, "a.cbz"), [{ name: "001.jpg", data: fakeJpegBytes() }]);
+    await reindex(db, { roots: [root], extensions: [".cbz"], mode: "full", now: () => 1000 });
+    // 2 回目も full なら skipped=0、 upserted=1
+    const stats = await reindex(db, {
+      roots: [root],
+      extensions: [".cbz"],
+      mode: "full",
+      now: () => 2000,
+    });
+    assertEquals(stats.scanned, 1);
+    assertEquals(stats.skipped, 0);
+    assertEquals(stats.upserted, 1);
   } finally {
     db.close();
     await Deno.remove(root, { recursive: true });

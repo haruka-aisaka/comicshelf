@@ -36,26 +36,88 @@ defaultDirection.addEventListener("change", () => {
   localStorage.setItem(DIRECTION_KEY, defaultDirection.value);
 });
 
-reindexBtn.addEventListener("click", async () => {
+const reindexDialog = /** @type {HTMLElement | null} */ (document.querySelector("#reindex-dialog"));
+const reindexDialogFullSub = /** @type {HTMLElement | null} */ (
+  document.querySelector("#reindex-dialog-full-sub")
+);
+
+reindexBtn.addEventListener("click", () => {
+  if (reindexBtn.disabled) return;
+  openReindexDialog();
+});
+
+function openReindexDialog() {
+  if (!reindexDialog) {
+    // フォールバック: ダイアログがなければ直接差分実行
+    startReindex("incremental");
+    return;
+  }
+  // 全件ボタンの説明文に前回所要時間を反映
+  if (reindexDialogFullSub) {
+    const lastMs = lastResultElapsedMs;
+    if (lastMs && lastMs > 0) {
+      reindexDialogFullSub.textContent =
+        `全 ZIP を開き直します。 前回は ${formatDuration(lastMs)} かかりました`;
+    } else {
+      reindexDialogFullSub.textContent = "全 ZIP を開き直します (初回実行)";
+    }
+  }
+  reindexDialog.removeAttribute("hidden");
+}
+
+function closeReindexDialog() {
+  if (reindexDialog) reindexDialog.setAttribute("hidden", "");
+}
+
+if (reindexDialog) {
+  reindexDialog.addEventListener("click", (e) => {
+    const target = e.target;
+    if (!(target instanceof HTMLElement)) return;
+    const actionEl = target.closest("[data-action]");
+    if (!actionEl) return;
+    const action = actionEl.getAttribute("data-action");
+    if (action === "cancel") {
+      closeReindexDialog();
+    } else if (action === "incremental" || action === "full") {
+      closeReindexDialog();
+      startReindex(action);
+    }
+  });
+  // Esc キーで閉じる
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !reindexDialog.hasAttribute("hidden")) {
+      closeReindexDialog();
+    }
+  });
+}
+
+async function startReindex(mode) {
   reindexBtn.disabled = true;
   setStatus("開始中…");
   try {
-    const res = await fetch("/api/index/rebuild", { method: "POST" });
+    const res = await fetch(`/api/index/rebuild?mode=${mode}`, { method: "POST" });
     if (res.status === 409) {
       setStatus("既に実行中です", "error");
-      // 進行中表示にする
       startStatusPolling();
       return;
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    setStatus("インデックス中…");
-    // background で開始。 ここから polling して進捗を見る。
+    setStatus(mode === "full" ? "全件インデックス中…" : "差分インデックス中…");
     startStatusPolling();
   } catch (e) {
     setStatus(`エラー: ${e instanceof Error ? e.message : String(e)}`, "error");
     reindexBtn.disabled = false;
   }
-});
+}
+
+/** ms を「8 分 32 秒」 形式に */
+function formatDuration(ms) {
+  const totalSec = Math.round(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  if (m === 0) return `${s} 秒`;
+  return `${m} 分 ${s} 秒`;
+}
 
 /** @type {number | undefined} 進捗 polling timer (reindex 中 / warmup 中で動く) */
 let pollTimer;
@@ -65,6 +127,8 @@ let elapsedTicker;
 let prevRunning = false;
 /** 現在 banner に表示している実行の startedAt (経過秒 ticker で参照) */
 let bannerStartedAt = 0;
+/** 直近の lastResult.elapsedMs (ダイアログの「前回所要時間」 表示用) */
+let lastResultElapsedMs = 0;
 
 async function refresh() {
   await Promise.all([loadConfig(), loadStatus()]);
@@ -86,6 +150,7 @@ await refresh();
 
 /**
  * @param {{ title: string, startedAt: number, scanned: number,
+ *   upserted?: number, skipped?: number,
  *   comicInfoImported: number, totalEstimate: number,
  *   currentFile?: string | null, done: boolean }} info
  */
@@ -104,8 +169,11 @@ function showBanner(info) {
   }
   if (reindexBannerDetail) {
     const denomText = info.totalEstimate > 0 ? ` / 約 ${info.totalEstimate} 件` : "";
+    const changedText = info.upserted !== undefined
+      ? ` ・ 変更 ${info.upserted} 件`
+      : "";
     let detail =
-      `${info.scanned} 件処理済み${denomText} ・ ComicInfo ${info.comicInfoImported} 件`;
+      `${info.scanned} 件処理済み${denomText}${changedText} ・ ComicInfo ${info.comicInfoImported} 件`;
     if (info.currentFile && !info.done) {
       // パスが長い時は末尾だけ (basename) を出す
       const slash = info.currentFile.lastIndexOf("/");
@@ -172,6 +240,7 @@ async function loadStatus() {
       lastUpserted.textContent = String(data.lastResult.upserted);
       lastRemoved.textContent = String(data.lastResult.removed);
       lastElapsed.textContent = `${(data.lastResult.elapsedMs / 1000).toFixed(1)} 秒`;
+      lastResultElapsedMs = data.lastResult.elapsedMs;
     }
     if (data.nextRunAt) {
       nextRun.textContent = formatDateTime(data.nextRunAt * 1000);
@@ -188,20 +257,23 @@ async function loadStatus() {
     if (data.running && data.currentRun) {
       const elapsedSec = Math.floor((Date.now() - data.currentRun.startedAt) / 1000);
       const scanned = data.currentRun.scanned ?? 0;
+      const upserted = data.currentRun.upserted ?? 0;
       const ci = data.currentRun.comicInfoImported ?? 0;
       // 前回完了時の scanned を分母にして 進捗 % を表示 (なければ indeterminate)
       const totalEstimate = data.lastResult?.scanned ?? 0;
+      const title = data.currentRun.mode === "full" ? "全件インデックス中" : "インデックス中";
       showBanner({
-        title: "インデックス中",
+        title,
         startedAt: data.currentRun.startedAt,
         scanned,
+        upserted,
         comicInfoImported: ci,
         totalEstimate,
         currentFile: data.currentRun.currentFile,
         done: false,
       });
       setStatus(
-        `${scanned} 件処理済み (${elapsedSec}s, ComicInfo ${ci})`,
+        `${scanned} 件処理済み (${elapsedSec}s, 変更 ${upserted} 件, ComicInfo ${ci})`,
       );
     } else if (prevRunning && !data.running) {
       // running → 完了に変化したタイミング
@@ -219,6 +291,7 @@ async function loadStatus() {
           title: "完了",
           startedAt: r.startedAt,
           scanned: r.scanned,
+          upserted: r.upserted,
           comicInfoImported: r.comicInfoImported,
           totalEstimate: r.scanned,
           done: true,

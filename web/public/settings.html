@@ -50,6 +50,30 @@
       </div>
     </section>
 
+    <!-- 再インデックス確認ダイアログ (modal) -->
+    <div id="reindex-dialog" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="reindex-dialog-title">
+      <div class="modal-backdrop" data-action="cancel"></div>
+      <div class="modal-panel">
+        <h2 id="reindex-dialog-title" class="modal-title">インデックス方法を選んでください</h2>
+        <p class="modal-desc">
+          ライブラリの書籍について、 変更があったファイルだけを処理するか、 全件を処理するかを選べます。
+        </p>
+        <div class="modal-actions">
+          <button type="button" class="modal-btn modal-btn-primary" data-action="incremental">
+            <span class="modal-btn-title">差分インデックス (推奨)</span>
+            <span class="modal-btn-sub">前回から変わっていない本はスキップ。 数秒で完了します</span>
+          </button>
+          <button type="button" class="modal-btn" data-action="full">
+            <span class="modal-btn-title">全件再インデックス</span>
+            <span class="modal-btn-sub" id="reindex-dialog-full-sub">全 ZIP を開き直します</span>
+          </button>
+          <button type="button" class="modal-btn modal-btn-cancel" data-action="cancel">
+            キャンセル
+          </button>
+        </div>
+      </div>
+    </div>
+
     <section class="settings-card">
       <h2>ビューワー (デフォルト設定)</h2>
       <p class="settings-desc">これらの設定はブラウザに保存されます。</p>

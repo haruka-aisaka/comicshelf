@@ -18,9 +18,12 @@ export function buildIndexAdminRoutes(deps: IndexAdminDeps): Hono {
     if (deps.indexer.status.running) {
       return c.json({ error: "reindex already running" }, 409);
     }
+    // mode クエリパラメータ: incremental (デフォルト) / full
+    const modeParam = c.req.query("mode");
+    const mode = modeParam === "full" ? "full" : "incremental";
     // 完了を待たずに background で開始。 進捗は /api/index/status で polling 取得。
-    deps.indexer.runOnce().catch((e) => console.error("[rebuild] failed:", e));
-    return c.json({ status: "started" }, 202);
+    deps.indexer.runOnce(mode).catch((e) => console.error("[rebuild] failed:", e));
+    return c.json({ status: "started", mode }, 202);
   });
 
   app.get("/index/status", (c) => c.json(deps.indexer.status));

@@ -4,6 +4,7 @@ import { scanLibrary, type ScanOptions, titleFromFilename } from "./scanner.ts";
 import {
   deleteBookByPath,
   deleteComicInfo,
+  getBookByPath,
   listAllBookPaths,
   upsertBook,
   upsertComicInfo,
@@ -12,10 +13,12 @@ import { readComicInfoXml } from "../reader/archive.ts";
 import { parseComicInfo } from "../comicinfo/parser.ts";
 
 export interface IndexStats {
-  /** 検出したファイル総数 */
+  /** 検出したファイル総数 (skip 含む) */
   scanned: number;
   /** 新規・更新でDBに反映した件数 */
   upserted: number;
+  /** 差分判定で変更なしと判定し、 ZIP を開かず DB も触らなかった件数 */
+  skipped: number;
   /** ファイル消失で削除した件数 */
   removed: number;
   /** ComicInfo.xml を取り込めた件数 */
@@ -24,14 +27,20 @@ export interface IndexStats {
   failedRoots: string[];
 }
 
+export type IndexMode = "incremental" | "full";
+
 export interface IndexOptions extends ScanOptions {
   /** スキャン対象のルート絶対パス一覧 */
   roots: string[];
   /** 現在時刻 (テスト用に注入可能) */
   now?: () => number;
+  /** インデックスモード。 incremental (デフォルト) は path+size+mtime 一致で skip。 */
+  mode?: IndexMode;
   /** 進捗通知 (1書籍処理ごとに呼ばれる)。 IndexerService で UI 表示に使う。 */
   onProgress?: (
-    stats: Pick<IndexStats, "scanned" | "comicInfoImported"> & { currentFile?: string },
+    stats:
+      & Pick<IndexStats, "scanned" | "upserted" | "skipped" | "comicInfoImported">
+      & { currentFile?: string },
   ) => void;
 }
 
@@ -50,9 +59,11 @@ export interface IndexOptions extends ScanOptions {
  */
 export async function reindex(db: Database, opts: IndexOptions): Promise<IndexStats> {
   const now = opts.now ?? (() => Math.floor(Date.now() / 1000));
+  const mode: IndexMode = opts.mode ?? "incremental";
   const stats: IndexStats = {
     scanned: 0,
     upserted: 0,
+    skipped: 0,
     removed: 0,
     comicInfoImported: 0,
     failedRoots: [],
@@ -68,9 +79,32 @@ export async function reindex(db: Database, opts: IndexOptions): Promise<IndexSt
         // 処理開始時点で currentFile を報告 (ZIP 展開が遅い時も UI に動きが出る)
         opts.onProgress?.({
           scanned: stats.scanned,
+          upserted: stats.upserted,
+          skipped: stats.skipped,
           comicInfoImported: stats.comicInfoImported,
           currentFile: f.relativePath,
         });
+
+        // 差分判定: incremental モードで path + size + mtime が一致なら skip
+        if (mode === "incremental") {
+          const existing = getBookByPath(db, f.relativePath);
+          if (
+            existing &&
+            existing.sizeBytes === f.sizeBytes &&
+            existing.modifiedAt === f.modifiedAt
+          ) {
+            stats.skipped++;
+            opts.onProgress?.({
+              scanned: stats.scanned,
+              upserted: stats.upserted,
+              skipped: stats.skipped,
+              comicInfoImported: stats.comicInfoImported,
+              currentFile: f.relativePath,
+            });
+            continue;
+          }
+        }
+
         const book = upsertBook(db, {
           path: f.relativePath,
           filename: f.filename,
@@ -101,6 +135,8 @@ export async function reindex(db: Database, opts: IndexOptions): Promise<IndexSt
         // 処理完了時点で comicInfoImported を最新化 (currentFile は次のループで上書き)
         opts.onProgress?.({
           scanned: stats.scanned,
+          upserted: stats.upserted,
+          skipped: stats.skipped,
           comicInfoImported: stats.comicInfoImported,
           currentFile: f.relativePath,
         });
