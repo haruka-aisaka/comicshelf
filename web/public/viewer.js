@@ -1,4 +1,11 @@
 // @ts-check
+import {
+  alignToPair as alignToPairPure,
+  clamp,
+  clampInterval,
+  formatIntervalLabel,
+  MIN_INTERVAL_SEC,
+} from "/lib/viewer_util.js";
 import("/sw-register.js").catch(() => {});
 /**
  * comicshelf ビューワー。
@@ -101,7 +108,6 @@ function applySpreadModeChange() {
  *  - menu-overlay 表示中 / タブが背景 で system pause (自動 stop は別扱い)。
  */
 const AUTO_ADV_KEY = "comicshelf.autoAdvanceSec";
-const MIN_INTERVAL_SEC = 1;
 const AutoAdvance = {
   /** 設定値 (常に >= 1)。 永続化する */
   intervalSec: clampInterval(Number(localStorage.getItem(AUTO_ADV_KEY) ?? String(MIN_INTERVAL_SEC))),
@@ -245,21 +251,6 @@ const AutoAdvance = {
   },
 };
 
-/**
- * 自動送り間隔を有効範囲にクランプ。
- *  - 最短 1 秒 (MIN_INTERVAL_SEC) 。 1 未満は 1 に丸める。
- *  - 0.1 秒単位 (UI は max=60、 安全のため内部上限 600 秒)
- */
-function clampInterval(n) {
-  if (!Number.isFinite(n) || n < MIN_INTERVAL_SEC) return MIN_INTERVAL_SEC;
-  const rounded = Math.round(n * 10) / 10;
-  return Math.min(600, rounded);
-}
-
-function formatIntervalLabel(sec) {
-  // 整数秒は小数点なし、 小数の場合は 0.1 単位
-  return Number.isInteger(sec) ? `${sec} 秒` : `${sec.toFixed(1)} 秒`;
-}
 
 /** ピンチ拡大state */
 let zoomScale = 1;
@@ -826,15 +817,9 @@ function moveBackward() {
   else jumpTo(currentPage - 2);
 }
 
-/**
- * 任意指定のページ番号を、 spread モードならペア境界に揃える。
- * - 表紙 (page 0) は単独
- * - page 1-2 / 3-4 / 5-6 ... がペア (右ページ = 奇数 0-indexed)
- */
+/** 現在の spread 設定でペア境界に揃える (純粋関数のラッパー) */
 function alignToPair(n) {
-  if (!spreadCb.checked) return n;
-  if (n <= 0) return 0;
-  return n % 2 === 0 ? n - 1 : n;
+  return alignToPairPure(n, spreadCb.checked);
 }
 
 /**
@@ -1059,8 +1044,4 @@ async function finishAndClose() {
     console.warn("既読化失敗", e);
   }
   location.href = "/";
-}
-
-function clamp(n, lo, hi) {
-  return Math.max(lo, Math.min(hi, n));
 }
