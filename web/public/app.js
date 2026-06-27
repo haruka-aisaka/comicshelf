@@ -22,9 +22,34 @@ const dirList = $("#directories");
 /** @type {{sort: string, directory: string, status: string, query: string}} */
 const state = readQuery();
 
+/** フォーム要素を state (= URL) に合わせて再同期。
+ *  初回ロード時、 BFCache から復元時 (pageshow.persisted=true) で呼ぶ。
+ *  ブラウザによっては BFCache 復元で JS 由来の value がリセットされるため。 */
+function syncFormFromState() {
+  sortSel.value = state.sort;
+  if (filterSel) filterSel.value = state.status;
+  if (searchInput) searchInput.value = state.query;
+  updateSearchClearVisibility();
+}
+
 sortSel.value = state.sort;
 if (filterSel) filterSel.value = state.status;
 if (searchInput) searchInput.value = state.query;
+
+// BFCache 復元時にも検索バー等を URL から再同期 (Safari 等で input.value が
+// 空にリセットされる挙動の対策)
+window.addEventListener("pageshow", (e) => {
+  // 初回 navigate は init で sync 済みなので、 persisted=true (BFCache) の時のみ実行
+  if (e.persisted) {
+    // URL は history.back で復元済みなので state を読み直す
+    const q = readQuery();
+    state.sort = q.sort;
+    state.directory = q.directory;
+    state.status = q.status;
+    state.query = q.query;
+    syncFormFromState();
+  }
+});
 
 sortSel.addEventListener("change", () => {
   state.sort = sortSel.value;
