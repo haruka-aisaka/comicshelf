@@ -251,6 +251,22 @@ function prefetchAround(centerPage) {
 function bindEvents() {
   prevBtn.addEventListener("click", () => moveBackward());
   nextBtn.addEventListener("click", () => moveForward());
+
+  // 「←」 (一覧に戻る) ボタン: 履歴があれば history.back で q やスクロール位置を保持。
+  // 履歴が無い (直接 URL 開き等) なら /index.html にフォールバック。
+  const backLink = document.querySelector(".menu-overlay .back");
+  if (backLink) {
+    backLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      const sameOriginReferrer = document.referrer &&
+        new URL(document.referrer).origin === location.origin;
+      if (history.length > 1 && sameOriginReferrer) {
+        history.back();
+      } else {
+        location.href = "/index.html";
+      }
+    });
+  }
   if (spreadModeSel) {
     spreadModeSel.value = spreadMode;
     spreadModeSel.addEventListener("change", () => {
