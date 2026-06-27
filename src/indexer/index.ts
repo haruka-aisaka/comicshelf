@@ -30,7 +30,9 @@ export interface IndexOptions extends ScanOptions {
   /** 現在時刻 (テスト用に注入可能) */
   now?: () => number;
   /** 進捗通知 (1書籍処理ごとに呼ばれる)。 IndexerService で UI 表示に使う。 */
-  onProgress?: (stats: Pick<IndexStats, "scanned" | "comicInfoImported">) => void;
+  onProgress?: (
+    stats: Pick<IndexStats, "scanned" | "comicInfoImported"> & { currentFile?: string },
+  ) => void;
 }
 
 /**
@@ -63,6 +65,12 @@ export async function reindex(db: Database, opts: IndexOptions): Promise<IndexSt
       for await (const f of scanLibrary(root, { extensions: opts.extensions })) {
         stats.scanned++;
         seenPaths.add(f.relativePath);
+        // 処理開始時点で currentFile を報告 (ZIP 展開が遅い時も UI に動きが出る)
+        opts.onProgress?.({
+          scanned: stats.scanned,
+          comicInfoImported: stats.comicInfoImported,
+          currentFile: f.relativePath,
+        });
         const book = upsertBook(db, {
           path: f.relativePath,
           filename: f.filename,
@@ -90,7 +98,12 @@ export async function reindex(db: Database, opts: IndexOptions): Promise<IndexSt
         } catch (e) {
           console.warn(`[indexer] ComicInfo.xml 読込失敗 ${f.relativePath}:`, e);
         }
-        opts.onProgress?.({ scanned: stats.scanned, comicInfoImported: stats.comicInfoImported });
+        // 処理完了時点で comicInfoImported を最新化 (currentFile は次のループで上書き)
+        opts.onProgress?.({
+          scanned: stats.scanned,
+          comicInfoImported: stats.comicInfoImported,
+          currentFile: f.relativePath,
+        });
       }
     } catch (err) {
       console.error(`[indexer] failed to scan root ${root}:`, err);

@@ -57,7 +57,14 @@ reindexBtn.addEventListener("click", async () => {
   }
 });
 
-await refresh();
+/** @type {number | undefined} 進捗 polling timer (reindex 中 / warmup 中で動く) */
+let pollTimer;
+/** @type {number | undefined} 経過秒を client-side で滑らかに進める ticker (200ms) */
+let elapsedTicker;
+/** 直前の status snapshot (完了検知用) */
+let prevRunning = false;
+/** 現在 banner に表示している実行の startedAt (経過秒 ticker で参照) */
+let bannerStartedAt = 0;
 
 async function refresh() {
   await Promise.all([loadConfig(), loadStatus()]);
@@ -74,25 +81,38 @@ async function loadConfig() {
   }
 }
 
-/** @type {number | undefined} 進捗 polling timer (reindex 中 / warmup 中で動く) */
-let pollTimer;
-/** 直前の status snapshot (完了検知用) */
-let prevRunning = false;
+// 初回ロード (let 群の TDZ 期間が終わってから refresh を実行)
+await refresh();
 
 /**
- * @param {{ title: string, elapsedSec: number, scanned: number,
- *   comicInfoImported: number, totalEstimate: number, done: boolean }} info
+ * @param {{ title: string, startedAt: number, scanned: number,
+ *   comicInfoImported: number, totalEstimate: number,
+ *   currentFile?: string | null, done: boolean }} info
  */
 function showBanner(info) {
   if (!reindexBanner) return;
   reindexBanner.removeAttribute("hidden");
   reindexBanner.classList.toggle("done", info.done);
+  bannerStartedAt = info.startedAt;
   if (reindexBannerTitle) reindexBannerTitle.textContent = info.title;
-  if (reindexBannerElapsed) reindexBannerElapsed.textContent = `${info.elapsedSec} 秒`;
+  // 経過秒は ticker で都度更新するが、 polling の応答到達時にも即時 sync
+  if (reindexBannerElapsed) {
+    const sec = info.done
+      ? Math.floor((Date.now() - info.startedAt) / 1000)
+      : Math.floor((Date.now() - info.startedAt) / 1000);
+    reindexBannerElapsed.textContent = `${sec} 秒`;
+  }
   if (reindexBannerDetail) {
     const denomText = info.totalEstimate > 0 ? ` / 約 ${info.totalEstimate} 件` : "";
-    reindexBannerDetail.textContent =
-      `${info.scanned} 件処理済み${denomText} ・ ComicInfo 取り込み ${info.comicInfoImported} 件`;
+    let detail =
+      `${info.scanned} 件処理済み${denomText} ・ ComicInfo ${info.comicInfoImported} 件`;
+    if (info.currentFile && !info.done) {
+      // パスが長い時は末尾だけ (basename) を出す
+      const slash = info.currentFile.lastIndexOf("/");
+      const name = slash >= 0 ? info.currentFile.slice(slash + 1) : info.currentFile;
+      detail += `\n処理中: ${name}`;
+    }
+    reindexBannerDetail.textContent = detail;
   }
   if (reindexBannerBar) {
     if (info.totalEstimate > 0) {
@@ -114,9 +134,13 @@ function hideBanner() {
 }
 
 function startStatusPolling() {
-  if (pollTimer !== undefined) return;
-  pollTimer = setInterval(loadStatus, 1000);
-  loadStatus();
+  if (pollTimer === undefined) {
+    pollTimer = setInterval(loadStatus, 500);
+    loadStatus();
+  }
+  if (elapsedTicker === undefined) {
+    elapsedTicker = setInterval(updateBannerElapsedOnly, 200);
+  }
 }
 
 function stopStatusPolling() {
@@ -124,11 +148,23 @@ function stopStatusPolling() {
     clearInterval(pollTimer);
     pollTimer = undefined;
   }
+  if (elapsedTicker !== undefined) {
+    clearInterval(elapsedTicker);
+    elapsedTicker = undefined;
+  }
+}
+
+/** banner-elapsed だけを client-side で 200ms ごと進める (件数は polling で更新) */
+function updateBannerElapsedOnly() {
+  if (!reindexBannerElapsed || bannerStartedAt === 0) return;
+  if (reindexBanner?.classList.contains("done")) return;
+  const sec = Math.floor((Date.now() - bannerStartedAt) / 1000);
+  reindexBannerElapsed.textContent = `${sec} 秒`;
 }
 
 async function loadStatus() {
   try {
-    const res = await fetch("/api/index/status");
+    const res = await fetch("/api/index/status", { cache: "no-store" });
     const data = await res.json();
 
     if (data.lastResult) {
@@ -144,6 +180,11 @@ async function loadStatus() {
     }
 
     // インデックス実行中の進捗表示 (バナー + ボタン横テキスト)
+    if (data.running) {
+      // running なら polling を確実に走らせる (currentRun が null でも)
+      startStatusPolling();
+      reindexBtn.disabled = true;
+    }
     if (data.running && data.currentRun) {
       const elapsedSec = Math.floor((Date.now() - data.currentRun.startedAt) / 1000);
       const scanned = data.currentRun.scanned ?? 0;
@@ -152,17 +193,16 @@ async function loadStatus() {
       const totalEstimate = data.lastResult?.scanned ?? 0;
       showBanner({
         title: "インデックス中",
-        elapsedSec,
+        startedAt: data.currentRun.startedAt,
         scanned,
         comicInfoImported: ci,
         totalEstimate,
+        currentFile: data.currentRun.currentFile,
         done: false,
       });
       setStatus(
         `${scanned} 件処理済み (${elapsedSec}s, ComicInfo ${ci})`,
       );
-      reindexBtn.disabled = true;
-      startStatusPolling();
     } else if (prevRunning && !data.running) {
       // running → 完了に変化したタイミング
       if (data.lastError) {
@@ -177,7 +217,7 @@ async function loadStatus() {
         // 完了バナーを 5 秒間表示してから消す
         showBanner({
           title: "完了",
-          elapsedSec: Math.floor(r.elapsedMs / 1000),
+          startedAt: r.startedAt,
           scanned: r.scanned,
           comicInfoImported: r.comicInfoImported,
           totalEstimate: r.scanned,

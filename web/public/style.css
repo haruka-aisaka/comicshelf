@@ -448,6 +448,8 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   font-size: 13px;
   color: var(--text);
   font-variant-numeric: tabular-nums;
+  white-space: pre-line;
+  word-break: break-all;
 }
 
 .settings-meta {

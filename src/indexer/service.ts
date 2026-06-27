@@ -38,6 +38,8 @@ export interface CurrentRunStatus {
   scanned: number;
   /** これまでに ComicInfo.xml を取り込んだ件数 */
   comicInfoImported: number;
+  /** 直近で処理中の書籍 (相対パス) */
+  currentFile: string | null;
 }
 
 export interface IndexerStatus {
@@ -111,7 +113,7 @@ export class IndexerService {
     if (this._running) return null;
     this._running = true;
     const startedAt = this.now();
-    this._currentRun = { startedAt, scanned: 0, comicInfoImported: 0 };
+    this._currentRun = { startedAt, scanned: 0, comicInfoImported: 0, currentFile: null };
     try {
       const stats = await reindex(this.db, {
         roots: this.config.library.roots,
@@ -121,6 +123,7 @@ export class IndexerService {
           if (this._currentRun) {
             this._currentRun.scanned = s.scanned;
             this._currentRun.comicInfoImported = s.comicInfoImported;
+            this._currentRun.currentFile = s.currentFile ?? null;
           }
         },
       });
