@@ -301,6 +301,42 @@ Deno.test("deleteComicInfo: 対象行のみ削除される", () => {
   assertEquals(getComicInfo(db, b.id)?.title, "B");
 });
 
+Deno.test("listBooks: query が ComicInfo のフィールドにもマッチする", () => {
+  const db = openDatabase(":memory:");
+  const a = upsertBook(db, makeBook({ path: "a.cbz", title: "fileA" }), 1);
+  const b = upsertBook(db, makeBook({ path: "b.cbz", title: "fileB" }), 2);
+  const c = upsertBook(db, makeBook({ path: "c.cbz", title: "fileC" }), 3);
+  upsertComicInfo(db, a.id, { writer: "岸本斉史", tags: ["忍者"] }, 100);
+  upsertComicInfo(db, b.id, { series: "ONE PIECE", penciller: "尾田栄一郎" }, 100);
+  upsertComicInfo(db, c.id, { imprint: "集英社", characters: "ナルト" }, 100);
+
+  // writer 一致
+  assertEquals(
+    listBooks(db, { query: "岸本" }).map((x) => x.title).sort(),
+    ["fileA"],
+  );
+  // series 一致
+  assertEquals(
+    listBooks(db, { query: "ONE PIECE" }).map((x) => x.title).sort(),
+    ["fileB"],
+  );
+  // tags 一致 (JSON 文字列の中身)
+  assertEquals(
+    listBooks(db, { query: "忍者" }).map((x) => x.title).sort(),
+    ["fileA"],
+  );
+  // characters 一致
+  assertEquals(
+    listBooks(db, { query: "ナルト" }).map((x) => x.title).sort(),
+    ["fileC"],
+  );
+  // imprint 一致
+  assertEquals(
+    listBooks(db, { query: "集英社" }).map((x) => x.title).sort(),
+    ["fileC"],
+  );
+});
+
 Deno.test("ON DELETE CASCADE: 書籍削除で comic_info も消える", () => {
   const db = openDatabase(":memory:");
   const b = upsertBook(db, makeBook(), 1);

@@ -104,29 +104,54 @@ export interface ListBooksOptions {
   offset?: number;
 }
 
-/** 既読情報を含めた一覧用Book */
+/** 一覧表示用に ComicInfo から抽出する軽量サマリ */
+export interface ComicInfoSummary {
+  title?: string;
+  series?: string;
+  writer?: string;
+  penciller?: string;
+  tags?: string[];
+  manga?: "Yes" | "No" | "YesAndRightToLeft" | "Unknown";
+}
+
+/** 既読情報 + ComicInfo サマリを含めた一覧用Book */
 export interface BookWithReadState extends Book {
   readState: ReadState | null;
+  comicInfo: ComicInfoSummary | null;
 }
 
 interface BookRowWithRead extends BookRow {
   rs_last_page: number | null;
   rs_finished: number | null;
   rs_updated_at: number | null;
+  ci_title: string | null;
+  ci_series: string | null;
+  ci_writer: string | null;
+  ci_penciller: string | null;
+  ci_tags: string | null;
+  ci_manga: string | null;
 }
 
 function rowToBookWithRead(r: BookRowWithRead): BookWithReadState {
   const book = rowToBook(r);
-  if (r.rs_updated_at === null) return { ...book, readState: null };
-  return {
-    ...book,
-    readState: {
-      bookId: r.id,
-      lastPage: r.rs_last_page ?? 0,
-      finished: r.rs_finished === 1,
-      updatedAt: r.rs_updated_at,
-    },
+  const readState = r.rs_updated_at === null ? null : {
+    bookId: r.id,
+    lastPage: r.rs_last_page ?? 0,
+    finished: r.rs_finished === 1,
+    updatedAt: r.rs_updated_at,
   };
+  const ci: ComicInfoSummary = {};
+  if (r.ci_title !== null) ci.title = r.ci_title;
+  if (r.ci_series !== null) ci.series = r.ci_series;
+  if (r.ci_writer !== null) ci.writer = r.ci_writer;
+  if (r.ci_penciller !== null) ci.penciller = r.ci_penciller;
+  if (r.ci_tags !== null) {
+    const parsed = safeParseStringArray(r.ci_tags);
+    if (parsed) ci.tags = parsed;
+  }
+  if (r.ci_manga !== null) ci.manga = r.ci_manga as ComicInfoSummary["manga"];
+  const comicInfo = Object.keys(ci).length > 0 ? ci : null;
+  return { ...book, readState, comicInfo };
 }
 
 export function listBooks(db: Database, opts: ListBooksOptions = {}): BookWithReadState[] {
@@ -140,9 +165,16 @@ export function listBooks(db: Database, opts: ListBooksOptions = {}): BookWithRe
     SELECT b.*,
       r.last_page  AS rs_last_page,
       r.finished   AS rs_finished,
-      r.updated_at AS rs_updated_at
+      r.updated_at AS rs_updated_at,
+      ci.title     AS ci_title,
+      ci.series    AS ci_series,
+      ci.writer    AS ci_writer,
+      ci.penciller AS ci_penciller,
+      ci.tags      AS ci_tags,
+      ci.manga     AS ci_manga
     FROM books b
     LEFT JOIN read_states r ON r.book_id = b.id
+    LEFT JOIN comic_info ci ON ci.book_id = b.id
   `;
 
   const whereParts: string[] = [];
@@ -164,10 +196,25 @@ export function listBooks(db: Database, opts: ListBooksOptions = {}): BookWithRe
     // LIKE のメタ文字 (% _ \) をエスケープして部分一致パターンに整形
     const escaped = trimmedQuery.replace(/[\\%_]/g, (m) => `\\${m}`);
     const pattern = `%${escaped}%`;
+    // 検索対象: ファイル名由来の title/directory + ComicInfo の主要文字列フィールド
+    // tags/genre は JSON 文字列 (["tag1","tag2"]) として格納されているので、 そのまま部分一致
+    const cols = [
+      "b.title",
+      "b.directory",
+      "ci.title",
+      "ci.series",
+      "ci.writer",
+      "ci.penciller",
+      "ci.imprint",
+      "ci.publisher",
+      "ci.characters",
+      "ci.tags",
+      "ci.genre",
+    ];
     whereParts.push(
-      "(b.title LIKE ? ESCAPE '\\' COLLATE NOCASE OR b.directory LIKE ? ESCAPE '\\' COLLATE NOCASE)",
+      `(${cols.map((c) => `${c} LIKE ? ESCAPE '\\' COLLATE NOCASE`).join(" OR ")})`,
     );
-    params.push(pattern, pattern);
+    for (let i = 0; i < cols.length; i++) params.push(pattern);
   }
   const statusClause = statusFilterClause(status);
   if (statusClause) whereParts.push(statusClause);
@@ -220,9 +267,16 @@ export function listContinueReading(db: Database, limit: number): BookWithReadSt
     SELECT b.*,
       r.last_page  AS rs_last_page,
       r.finished   AS rs_finished,
-      r.updated_at AS rs_updated_at
+      r.updated_at AS rs_updated_at,
+      ci.title     AS ci_title,
+      ci.series    AS ci_series,
+      ci.writer    AS ci_writer,
+      ci.penciller AS ci_penciller,
+      ci.tags      AS ci_tags,
+      ci.manga     AS ci_manga
     FROM books b
     INNER JOIN read_states r ON r.book_id = b.id
+    LEFT JOIN comic_info ci ON ci.book_id = b.id
     WHERE r.last_page > 0 AND r.finished = 0
     ORDER BY r.updated_at DESC
     LIMIT ?
@@ -238,9 +292,16 @@ export function listRecentlyFinished(db: Database, limit: number): BookWithReadS
     SELECT b.*,
       r.last_page  AS rs_last_page,
       r.finished   AS rs_finished,
-      r.updated_at AS rs_updated_at
+      r.updated_at AS rs_updated_at,
+      ci.title     AS ci_title,
+      ci.series    AS ci_series,
+      ci.writer    AS ci_writer,
+      ci.penciller AS ci_penciller,
+      ci.tags      AS ci_tags,
+      ci.manga     AS ci_manga
     FROM books b
     INNER JOIN read_states r ON r.book_id = b.id
+    LEFT JOIN comic_info ci ON ci.book_id = b.id
     WHERE r.finished = 1
     ORDER BY r.updated_at DESC
     LIMIT ?
@@ -256,9 +317,16 @@ export function listRecentlyAdded(db: Database, limit: number): BookWithReadStat
     SELECT b.*,
       r.last_page  AS rs_last_page,
       r.finished   AS rs_finished,
-      r.updated_at AS rs_updated_at
+      r.updated_at AS rs_updated_at,
+      ci.title     AS ci_title,
+      ci.series    AS ci_series,
+      ci.writer    AS ci_writer,
+      ci.penciller AS ci_penciller,
+      ci.tags      AS ci_tags,
+      ci.manga     AS ci_manga
     FROM books b
     LEFT JOIN read_states r ON r.book_id = b.id
+    LEFT JOIN comic_info ci ON ci.book_id = b.id
     ORDER BY b.added_at DESC
     LIMIT ?
   `;

@@ -166,7 +166,20 @@ async function init() {
   });
 
   const bookData = await bookPromise;
-  titleEl.textContent = bookData.book.title;
+  // ComicInfo の title があれば優先 (なければファイル名由来)
+  const displayTitle = bookData.comicInfo?.title ?? bookData.book.title;
+  titleEl.textContent = displayTitle;
+  applyMetaPanel(bookData.comicInfo);
+
+  // ユーザーが direction を明示保存していない & ComicInfo に manga ヒントがあれば反映
+  if (!localStorage.getItem(DIRECTION_KEY) && bookData.comicInfo?.manga) {
+    const inferred = bookData.comicInfo.manga === "YesAndRightToLeft" ? "rtl" : "ltr";
+    if (inferred !== direction) {
+      direction = inferred;
+      if (directionSel) directionSel.value = direction;
+      applyDirection();
+    }
+  }
 
   if (!params.has("page") && bookData.readState?.lastPage >= 0) {
     currentPage = bookData.readState.lastPage;
@@ -689,6 +702,63 @@ function moveBackward() {
 /** 現在の spread 設定でペア境界に揃える (純粋関数のラッパー) */
 function alignToPair(n) {
   return alignToPairPure(n, spreadCb.checked);
+}
+
+/**
+ * ComicInfo のサブセットを menu のメタパネルに反映する。
+ * series / 作者 / tags が無い場合は行ごと hidden。
+ * タグは個別の chip にして、 クリックで一覧画面の検索に飛ばす。
+ */
+function applyMetaPanel(comicInfo) {
+  const panel = document.querySelector("#meta-panel");
+  if (!panel) return;
+  if (!comicInfo) {
+    panel.setAttribute("hidden", "");
+    return;
+  }
+  /** @param {string} field, @param {string} text */
+  const setText = (field, text) => {
+    const row = panel.querySelector(`.meta-row[data-field="${field}"]`);
+    if (!row) return;
+    const valueEl = row.querySelector(".meta-value");
+    if (text) {
+      if (valueEl) valueEl.textContent = text;
+      row.removeAttribute("hidden");
+    } else {
+      row.setAttribute("hidden", "");
+    }
+  };
+  setText("series", comicInfo.series ?? "");
+  // 作者は writer 優先、 同じ値の penciller は重複扱いしない
+  const writer = comicInfo.writer ?? "";
+  const penciller = comicInfo.penciller ?? "";
+  const authorParts = [writer, penciller === writer ? "" : penciller].filter(Boolean);
+  setText("author", authorParts.join(" / "));
+
+  const tagsRow = panel.querySelector('.meta-row[data-field="tags"]');
+  const tagsEl = panel.querySelector(".meta-tags");
+  const tags = Array.isArray(comicInfo.tags) ? comicInfo.tags : [];
+  if (tagsRow && tagsEl) {
+    tagsEl.innerHTML = "";
+    if (tags.length > 0) {
+      for (const tag of tags) {
+        const chip = document.createElement("a");
+        chip.className = "meta-tag";
+        chip.href = `/?q=${encodeURIComponent(tag)}`;
+        chip.textContent = tag;
+        tagsEl.appendChild(chip);
+      }
+      tagsRow.removeAttribute("hidden");
+    } else {
+      tagsRow.setAttribute("hidden", "");
+    }
+  }
+  // どれか 1 行でも見せるなら panel を表示
+  const anyVisible = Array.from(panel.querySelectorAll(".meta-row")).some(
+    (r) => !r.hasAttribute("hidden"),
+  );
+  if (anyVisible) panel.removeAttribute("hidden");
+  else panel.setAttribute("hidden", "");
 }
 
 /**

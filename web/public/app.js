@@ -313,7 +313,9 @@ function makeCard(book) {
   img.className = "thumb";
   img.loading = "lazy";
   img.src = `/api/books/${book.id}/thumbnail`;
-  img.alt = book.title;
+  // ComicInfo の title があれば優先 (なければファイル名由来)
+  const displayTitle = book.comicInfo?.title ?? book.title;
+  img.alt = displayTitle;
   img.onerror = () => {
     img.style.display = "none";
   };
@@ -321,8 +323,17 @@ function makeCard(book) {
 
   const title = document.createElement("div");
   title.className = "card-title";
-  title.textContent = book.title;
+  title.textContent = displayTitle;
   card.appendChild(title);
+
+  // 作者 (ComicInfo の writer or penciller があれば card 下部に小さく表示)
+  const author = book.comicInfo?.writer ?? book.comicInfo?.penciller;
+  if (author) {
+    const sub = document.createElement("div");
+    sub.className = "card-author";
+    sub.textContent = author;
+    card.appendChild(sub);
+  }
 
   // 既読バッジ (一覧APIに含まれるreadStateから直接描画)
   if (book.readState?.finished) {
