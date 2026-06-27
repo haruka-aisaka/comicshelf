@@ -2,10 +2,8 @@
 import {
   alignToPair as alignToPairPure,
   clamp,
-  clampInterval,
-  formatIntervalLabel,
-  MIN_INTERVAL_SEC,
 } from "/lib/viewer_util.js";
+import { createAutoAdvance } from "/lib/auto_advance.js";
 import("/sw-register.js").catch(() => {});
 /**
  * comicshelf ビューワー。
@@ -101,155 +99,26 @@ function applySpreadModeChange() {
   render();
 }
 
-/** ---------- 自動ページ送り (auto-advance) ----------
- *  - スライダーで間隔を設定 (1.0〜60秒)。 起動時 / リロード時は常に「停止」 状態で始まる。
- *  - ユーザーが「再開」 を押すと running。 進捗バーで残時間を可視化。
- *  - 手動操作 (jumpTo / move*) でタイマーを再スタート (リスペクト)。
- *  - menu-overlay 表示中 / タブが背景 で system pause (自動 stop は別扱い)。
- */
-const AUTO_ADV_KEY = "comicshelf.autoAdvanceSec";
-const AutoAdvance = {
-  /** 設定値 (常に >= 1)。 永続化する */
-  intervalSec: clampInterval(Number(localStorage.getItem(AUTO_ADV_KEY) ?? String(MIN_INTERVAL_SEC))),
-  startedAt: 0,
-  /** ユーザーが「停止」 状態にしているか。 永続化しない (起動時は常に true)。 */
-  userStopped: true,
-  /** メニュー表示や非アクティブで強制 pause か */
-  systemPaused: false,
-  /** auto-advance 由来の moveForward 中か (jumpTo の reset 抑制用) */
-  _advancing: false,
-  /** @type {number} 100ms tick の interval ID */
-  _tickHandle: 0,
-
-  /** 「実際にタイマーが進む」 状態か */
-  get active() {
-    return !this.userStopped && !this.systemPaused;
+/** 自動ページ送り (auto-advance) は lib/auto_advance.js の純粋ファクトリで実装。
+ *  DOM 要素と コールバックを注入してインスタンス化する。 */
+const AutoAdvance = createAutoAdvance({
+  storage: localStorage,
+  now: () => Date.now(),
+  setTimer: (fn, ms) => setInterval(fn, ms),
+  clearTimer: (id) => clearInterval(id),
+  storageKey: "comicshelf.autoAdvanceSec",
+  getCurrentPage: () => currentPage,
+  getTotalPages: () => totalPages,
+  getDirection: () => direction,
+  moveForward: () => moveForward(),
+  ui: {
+    bar: autoBarEl,
+    fill: autoBarFill,
+    slider: autoAdvSel,
+    pauseBtn: autoPauseBtn,
+    valueLabel: document.querySelector("#auto-adv-value"),
   },
-
-  setIntervalSec(sec) {
-    this.intervalSec = clampInterval(sec);
-    localStorage.setItem(AUTO_ADV_KEY, String(this.intervalSec));
-    if (this.active) this.restart();
-    this.updateUi();
-  },
-
-  toggleUserStop() {
-    this.userStopped = !this.userStopped;
-    if (this.userStopped) {
-      this.stopTick();
-      this.startedAt = 0;
-      this.updateBar(0);
-    } else if (!this.systemPaused) {
-      this.restart();
-    }
-    this.updateUi();
-  },
-
-  setSystemPaused(paused) {
-    if (this.systemPaused === paused) return;
-    this.systemPaused = paused;
-    if (this.userStopped) return; // ユーザー停止中はシステム pause も無関係
-    if (paused) {
-      this.stopTick();
-    } else {
-      this.restart();
-    }
-    this.updateUi();
-  },
-
-  /** タイマーを再スタート (手動ページ操作後 / 設定変更後) */
-  restart() {
-    if (!this.active) return;
-    this.startedAt = Date.now();
-    this.startTick();
-    this.updateBar(0);
-  },
-
-  /** 完全停止 (終端到達時) — userStopped 状態にする */
-  stop() {
-    this.stopTick();
-    this.userStopped = true;
-    this.startedAt = 0;
-    this.updateBar(0);
-    this.updateUi();
-  },
-
-  startTick() {
-    this.stopTick();
-    this._tickHandle = setInterval(() => this.tick(), 100);
-  },
-  stopTick() {
-    if (this._tickHandle) {
-      clearInterval(this._tickHandle);
-      this._tickHandle = 0;
-    }
-  },
-
-  tick() {
-    if (!this.active || totalPages <= 0) return;
-    const elapsedMs = Date.now() - this.startedAt;
-    const totalMs = this.intervalSec * 1000;
-    const ratio = Math.min(1, elapsedMs / totalMs);
-    this.updateBar(ratio);
-    if (ratio >= 1) {
-      const before = currentPage;
-      this._advancing = true;
-      moveForward();
-      this._advancing = false;
-      if (currentPage === before) {
-        // 末尾で進めなかった → 停止
-        this.stop();
-      } else {
-        this.restart();
-      }
-    }
-  },
-
-  /** ユーザー由来でページが変わった時に呼ばれる。 タイマー再スタート */
-  onUserPageChange() {
-    if (!this.active) return;
-    if (this._advancing) return;
-    this.restart();
-  },
-
-  updateBar(ratio) {
-    if (!autoBarEl || !autoBarFill) return;
-    if (this.userStopped) {
-      autoBarEl.setAttribute("hidden", "");
-      return;
-    }
-    autoBarEl.removeAttribute("hidden");
-    autoBarEl.classList.toggle("paused", this.systemPaused);
-    // 読書方向に追従 (RTL: 右端から左へ進む)
-    autoBarEl.dataset.dir = direction;
-    autoBarFill.style.width = `${Math.max(0, Math.min(100, ratio * 100))}%`;
-  },
-
-  updateUi() {
-    if (autoAdvSel) {
-      autoAdvSel.value = String(this.intervalSec);
-      // 進捗 (0..1) を CSS var に書き込んで track の gradient fill を更新
-      const max = Number(autoAdvSel.max) || 1;
-      const min = Number(autoAdvSel.min) || 0;
-      const ratio = max > min ? (this.intervalSec - min) / (max - min) : 0;
-      autoAdvSel.style.setProperty("--val", String(Math.max(0, Math.min(1, ratio))));
-    }
-    const valueEl = document.querySelector("#auto-adv-value");
-    if (valueEl) valueEl.textContent = formatIntervalLabel(this.intervalSec);
-    if (autoPauseBtn) {
-      autoPauseBtn.setAttribute("aria-pressed", this.userStopped ? "true" : "false");
-      const label = autoPauseBtn.querySelector(".auto-pause-label");
-      const icon = autoPauseBtn.querySelector(".auto-pause-icon");
-      if (label) label.textContent = this.userStopped ? "再開" : "停止";
-      if (icon) icon.textContent = this.userStopped ? "▶" : "‖";
-    }
-    this.updateBar(
-      this.active && this.startedAt > 0
-        ? Math.min(1, (Date.now() - this.startedAt) / (this.intervalSec * 1000))
-        : 0,
-    );
-  },
-};
+});
 
 
 /** ピンチ拡大state */
@@ -440,8 +309,8 @@ function bindEvents() {
   }
 
   // 自動送り (auto-advance) のスライダー + 一時停止ボタン
+  // (slider の初期値は AutoAdvance.updateUi() でセットされる)
   if (autoAdvSel) {
-    autoAdvSel.value = String(AutoAdvance.intervalSec);
     autoAdvSel.addEventListener("input", () => {
       AutoAdvance.setIntervalSec(Number(autoAdvSel.value));
     });
