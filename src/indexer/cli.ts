@@ -11,7 +11,7 @@ import { reindex } from "./index.ts";
 
 if (import.meta.main) {
   const config = await loadConfig();
-  const db = openDatabase(config.database.path);
+  const db = openDatabase(config.database.path, config.library.roots[0]?.id);
   try {
     const started = Date.now();
     const stats = await reindex(db, {

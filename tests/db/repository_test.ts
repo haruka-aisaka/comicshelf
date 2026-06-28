@@ -1,17 +1,21 @@
 import { assertEquals, assertExists, assertFalse } from "@std/assert";
 import { openDatabase } from "../../src/db/schema.ts";
 import {
+  countFavorites,
   deleteBookByPath,
   deleteComicInfo,
   getBookById,
   getComicInfo,
+  getFavorite,
   getReadState,
-  listAllBookPaths,
+  listBookKeysByRoot,
   listBooks,
   listContinueReading,
   listDirectories,
   listRecentlyAdded,
+  listRecentlyFavorited,
   listRecentlyFinished,
+  setFavorite,
   updatePageCount,
   upsertBook,
   upsertComicInfo,
@@ -22,6 +26,7 @@ import type { ReadStatusFilter } from "../../src/types.ts";
 
 function makeBook(overrides: Partial<BookUpsertInput> = {}): BookUpsertInput {
   return {
+    rootId: "default",
     path: "series-a/vol-01.cbz",
     filename: "vol-01.cbz",
     title: "vol-01",
@@ -72,9 +77,9 @@ Deno.test("updatePageCount: ページ数を後から更新できる", () => {
 Deno.test("deleteBookByPath: 削除とfalse応答", () => {
   const db = openDatabase(":memory:");
   upsertBook(db, makeBook(), 1);
-  assertEquals(deleteBookByPath(db, "series-a/vol-01.cbz"), true);
-  assertEquals(deleteBookByPath(db, "series-a/vol-01.cbz"), false);
-  assertEquals(listAllBookPaths(db).length, 0);
+  assertEquals(deleteBookByPath(db, "default", "series-a/vol-01.cbz"), true);
+  assertEquals(deleteBookByPath(db, "default", "series-a/vol-01.cbz"), false);
+  assertEquals(listBookKeysByRoot(db, "default").length, 0);
 });
 
 Deno.test("listBooks: ソート種別の動作確認", () => {
@@ -162,9 +167,27 @@ Deno.test("listDirectories: 重複排除と件数集計", () => {
   upsertBook(db, makeBook({ path: "dir2/c.cbz", directory: "dir2" }), 3);
   const dirs = listDirectories(db);
   assertEquals(dirs, [
-    { directory: "dir1", bookCount: 2 },
-    { directory: "dir2", bookCount: 1 },
+    { rootId: "default", directory: "dir1", bookCount: 2 },
+    { rootId: "default", directory: "dir2", bookCount: 1 },
   ]);
+});
+
+Deno.test("listDirectories / listBooks: 別 root に同じ相対パスがあっても上書きされない", () => {
+  const db = openDatabase(":memory:");
+  upsertBook(db, makeBook({ rootId: "a", path: "x.cbz", title: "A-x" }), 1);
+  upsertBook(db, makeBook({ rootId: "b", path: "x.cbz", title: "B-x" }), 2);
+  // 2 件として保持される
+  const all = listBooks(db, { sort: "title" });
+  assertEquals(all.length, 2);
+  assertEquals(all.map((b) => `${b.rootId}:${b.title}`).sort(), ["a:A-x", "b:B-x"]);
+  // rootId フィルタ
+  const onlyA = listBooks(db, { rootId: "a" });
+  assertEquals(onlyA.length, 1);
+  assertEquals(onlyA[0]!.rootId, "a");
+  // listDirectories も root_id 別に集計
+  const dirs = listDirectories(db);
+  assertEquals(dirs.length, 2);
+  assertEquals(dirs.every((d) => d.directory === "series-a"), true);
 });
 
 Deno.test("upsertReadState: 部分更新と既読状態", () => {
@@ -245,7 +268,7 @@ Deno.test("ON DELETE CASCADE: 書籍削除でread_stateも消える", () => {
   const db = openDatabase(":memory:");
   const b = upsertBook(db, makeBook(), 1);
   upsertReadState(db, b.id, { lastPage: 5 }, 100);
-  deleteBookByPath(db, b.path);
+  deleteBookByPath(db, b.rootId, b.path);
   assertEquals(getReadState(db, b.id), null);
 });
 
@@ -341,6 +364,77 @@ Deno.test("ON DELETE CASCADE: 書籍削除で comic_info も消える", () => {
   const db = openDatabase(":memory:");
   const b = upsertBook(db, makeBook(), 1);
   upsertComicInfo(db, b.id, { title: "X", tags: ["t1"] }, 100);
-  deleteBookByPath(db, b.path);
+  deleteBookByPath(db, b.rootId, b.path);
   assertEquals(getComicInfo(db, b.id), null);
+});
+
+Deno.test("favorites: setFavorite/getFavorite/countFavorites の往復", () => {
+  const db = openDatabase(":memory:");
+  const a = upsertBook(db, makeBook({ path: "a.cbz", title: "A" }), 1);
+  const b = upsertBook(db, makeBook({ path: "b.cbz", title: "B" }), 2);
+  // 初期状態は favorited=false
+  assertEquals(getFavorite(db, a.id).favorited, false);
+  assertEquals(countFavorites(db), 0);
+  // セット
+  const s1 = setFavorite(db, a.id, true, 1000);
+  assertEquals(s1.favorited, true);
+  assertEquals(s1.createdAt, 1000);
+  assertEquals(countFavorites(db), 1);
+  // 同じ true で再 set しても created_at は変わらない (最初の値を維持)
+  const s2 = setFavorite(db, a.id, true, 9999);
+  assertEquals(s2.createdAt, 1000);
+  // 別書籍も追加
+  setFavorite(db, b.id, true, 2000);
+  assertEquals(countFavorites(db), 2);
+  // 解除
+  const s3 = setFavorite(db, a.id, false, 3000);
+  assertEquals(s3.favorited, false);
+  assertEquals(s3.createdAt, null);
+  assertEquals(countFavorites(db), 1);
+});
+
+Deno.test("favorites: listBooks の favorited フィールドと ?favorited フィルタ", () => {
+  const db = openDatabase(":memory:");
+  const a = upsertBook(db, makeBook({ path: "a.cbz", title: "A" }), 1);
+  upsertBook(db, makeBook({ path: "b.cbz", title: "B" }), 2);
+  setFavorite(db, a.id, true, 1000);
+  // favorited 列が反映される
+  const all = listBooks(db, { sort: "title" });
+  assertEquals(all.find((x) => x.title === "A")?.favorited, true);
+  assertEquals(all.find((x) => x.title === "B")?.favorited, false);
+  // ?favorited=true フィルタ
+  const onlyFav = listBooks(db, { favorited: true });
+  assertEquals(onlyFav.length, 1);
+  assertEquals(onlyFav[0]!.title, "A");
+});
+
+Deno.test("favorites: sort=favorited はお気に入りを先頭、 その後タイトル順", () => {
+  const db = openDatabase(":memory:");
+  const a = upsertBook(db, makeBook({ path: "a.cbz", title: "Zeta" }), 1);
+  upsertBook(db, makeBook({ path: "b.cbz", title: "Alpha" }), 2);
+  upsertBook(db, makeBook({ path: "c.cbz", title: "Beta" }), 3);
+  setFavorite(db, a.id, true, 1000);
+  const titles = listBooks(db, { sort: "favorited" }).map((b) => b.title);
+  assertEquals(titles, ["Zeta", "Alpha", "Beta"]);
+});
+
+Deno.test("favorites: listRecentlyFavorited は created_at DESC", () => {
+  const db = openDatabase(":memory:");
+  const a = upsertBook(db, makeBook({ path: "a.cbz", title: "A" }), 1);
+  const b = upsertBook(db, makeBook({ path: "b.cbz", title: "B" }), 2);
+  const c = upsertBook(db, makeBook({ path: "c.cbz", title: "C" }), 3);
+  setFavorite(db, a.id, true, 1000);
+  setFavorite(db, c.id, true, 3000);
+  setFavorite(db, b.id, true, 2000);
+  const titles = listRecentlyFavorited(db, 10).map((x) => x.title);
+  assertEquals(titles, ["C", "B", "A"]);
+});
+
+Deno.test("ON DELETE CASCADE: 書籍削除で favorites も消える", () => {
+  const db = openDatabase(":memory:");
+  const a = upsertBook(db, makeBook(), 1);
+  setFavorite(db, a.id, true, 1000);
+  assertEquals(countFavorites(db), 1);
+  deleteBookByPath(db, a.rootId, a.path);
+  assertEquals(countFavorites(db), 0);
 });

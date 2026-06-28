@@ -34,7 +34,10 @@ async function setupWorld(): Promise<{
   ]);
 
   const config: Config = {
-    library: { roots: [libraryRoot], extensions: [".cbz"] },
+    library: {
+      roots: [{ id: "default", name: "Default", path: libraryRoot }],
+      extensions: [".cbz"],
+    },
     server: { host: "127.0.0.1", port: 0 },
     database: { path: tmpDb },
     indexer: { watchInterval: 3600 },
@@ -89,12 +92,12 @@ Deno.test("API E2E: 全体フロー (rebuild → list → page取得 → 既読�
     const filt = await filtRes.json();
     assertEquals(filt.books.length, 2);
 
-    // 4. ディレクトリ一覧
+    // 4. ディレクトリ一覧 (root_id 込み)
     const dirsRes = await w.app.app.request("/api/directories");
     const dirs = await dirsRes.json();
     assertEquals(dirs.directories, [
-      { directory: "series-a", bookCount: 2 },
-      { directory: "series-b", bookCount: 1 },
+      { rootId: "default", directory: "series-a", bookCount: 2 },
+      { rootId: "default", directory: "series-b", bookCount: 1 },
     ]);
 
     // 5. 個別書籍取得 + ページ一覧
@@ -167,6 +170,138 @@ Deno.test("API: 不正パラメータは400/404", async () => {
       body: JSON.stringify({ lastPage: 0 }),
     });
     assertEquals(bad3.status, 404);
+  } finally {
+    await w.cleanup();
+  }
+});
+
+Deno.test("API: /api/config に roots ({id, name, path, bookCount}) が含まれる", async () => {
+  const w = await setupWorld();
+  try {
+    // インデックス完了を待ってから件数を確認
+    await w.app.app.request("/api/index/rebuild", { method: "POST" });
+    for (let i = 0; i < 100; i++) {
+      const s = await (await w.app.app.request("/api/index/status")).json();
+      if (!s.running && s.lastResult) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const res = await w.app.app.request("/api/config");
+    const data = await res.json();
+    assertEquals(data.library.roots.length, 1);
+    const r = data.library.roots[0];
+    assertEquals(r.id, "default");
+    assertEquals(r.name, "Default");
+    assertEquals(typeof r.path, "string");
+    assertEquals(r.bookCount, 3);
+  } finally {
+    await w.cleanup();
+  }
+});
+
+Deno.test("API: ?root= で root に絞り込める", async () => {
+  const w = await setupWorld();
+  try {
+    await w.app.app.request("/api/index/rebuild", { method: "POST" });
+    for (let i = 0; i < 100; i++) {
+      const s = await (await w.app.app.request("/api/index/status")).json();
+      if (!s.running && s.lastResult) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    // 存在する root
+    const okRes = await w.app.app.request("/api/books?root=default");
+    const ok = await okRes.json();
+    assertEquals(ok.books.length, 3);
+    // 存在しない root
+    const ngRes = await w.app.app.request("/api/books?root=unknown");
+    const ng = await ngRes.json();
+    assertEquals(ng.books.length, 0);
+  } finally {
+    await w.cleanup();
+  }
+});
+
+Deno.test("API: POST /favorite + ?favorited=1 / sort=favorited / config.favoritesCount", async () => {
+  const w = await setupWorld();
+  try {
+    await w.app.app.request("/api/index/rebuild", { method: "POST" });
+    for (let i = 0; i < 100; i++) {
+      const s = await (await w.app.app.request("/api/index/status")).json();
+      if (!s.running && s.lastResult) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    // 全件取得 → 1 冊目をお気に入りにする
+    const list = await (await w.app.app.request("/api/books")).json();
+    const firstId = list.books[0].id;
+    const favRes = await w.app.app.request(`/api/books/${firstId}/favorite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ favorited: true }),
+    });
+    assertEquals(favRes.status, 200);
+    const favBody = await favRes.json();
+    assertEquals(favBody.favorite.favorited, true);
+
+    // /api/books に favorited 列が乗る
+    const listAfter = await (await w.app.app.request("/api/books")).json();
+    const target = listAfter.books.find((b: { id: number }) => b.id === firstId);
+    assertEquals(target?.favorited, true);
+
+    // ?favorited=1 で絞り込み
+    const filtered = await (await w.app.app.request("/api/books?favorited=1")).json();
+    assertEquals(filtered.books.length, 1);
+    assertEquals(filtered.books[0].id, firstId);
+
+    // sort=favorited はお気に入り先頭
+    const sorted = await (await w.app.app.request("/api/books?sort=favorited")).json();
+    assertEquals(sorted.books[0].id, firstId);
+
+    // sections レスポンスには favorites を含めない (カルーセル非掲載)
+    const sections = await (await w.app.app.request("/api/books/sections")).json();
+    assertEquals(sections.favorites, undefined);
+
+    // /api/config に favoritesCount が反映
+    const cfg = await (await w.app.app.request("/api/config")).json();
+    assertEquals(cfg.library.favoritesCount, 1);
+
+    // 解除
+    const unfav = await w.app.app.request(`/api/books/${firstId}/favorite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ favorited: false }),
+    });
+    const unfavBody = await unfav.json();
+    assertEquals(unfavBody.favorite.favorited, false);
+  } finally {
+    await w.cleanup();
+  }
+});
+
+Deno.test("API: favorite の異常系 (404 / 400)", async () => {
+  const w = await setupWorld();
+  try {
+    await w.app.app.request("/api/index/rebuild", { method: "POST" });
+    for (let i = 0; i < 100; i++) {
+      const s = await (await w.app.app.request("/api/index/status")).json();
+      if (!s.running && s.lastResult) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    // 存在しない book_id → 404
+    const ng = await w.app.app.request("/api/books/99999/favorite", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ favorited: true }),
+    });
+    assertEquals(ng.status, 404);
+
+    // boolean 以外 → 400
+    const list = await (await w.app.app.request("/api/books")).json();
+    const id = list.books[0].id;
+    const bad = await w.app.app.request(`/api/books/${id}/favorite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ favorited: "yes" }),
+    });
+    assertEquals(bad.status, 400);
   } finally {
     await w.cleanup();
   }

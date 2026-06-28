@@ -16,7 +16,9 @@
   --safe-right: env(safe-area-inset-right, 0px);
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 html, body {
   margin: 0;
@@ -37,14 +39,23 @@ html, body {
   overflow-x: clip;
   max-width: 100%;
 }
-body.viewer-body { touch-action: none; }
+body.viewer-body {
+  touch-action: none;
+}
 
 /* iOS Safari: notch/Dynamic Island背後をbar色で塗りつぶすため、
    html背景もtopbar色で統一 (要素の隙間に bg が露出するのを防ぐ) */
-html { background: var(--surface); }
+html {
+  background: var(--surface);
+}
 
-a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
 
 button, select, input {
   background: var(--surface-2);
@@ -56,14 +67,21 @@ button, select, input {
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-button:hover { background: #2d3340; }
+button:hover {
+  background: #2d3340;
+}
 
 .sr-label {
   /* ラベルは画面上は非表示にしてアクセシビリティだけ確保 */
   position: absolute;
-  width: 1px; height: 1px;
-  margin: -1px; padding: 0; overflow: hidden;
-  clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ---------- Top bar ---------- */
@@ -100,20 +118,34 @@ button:hover { background: #2d3340; }
   flex-wrap: wrap;
   justify-content: flex-end;
 }
-.toolbar label { display: flex; gap: 6px; align-items: center; color: var(--text-dim); }
+.toolbar label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--text-dim);
+}
 .sections {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-bottom: 28px;
 }
-.sections[hidden] { display: none; }
-.section[hidden] { display: none; }
+.sections[hidden] {
+  display: none;
+}
+.section[hidden] {
+  display: none;
+}
 /* セクション containerが overflow-x:auto の子 (section-row) で押し広げられるのを防ぐ。
    min-width: 0 がないと flex 子は中身の intrinsic width で固定され、 親(.content)を
    ビューポート超に拡張してしまい、 grid の auto-fill が誤った列数を計算してしまう。 */
-.sections, .section { min-width: 0; }
-.section-row { min-width: 0; max-width: 100%; }
+.sections, .section {
+  min-width: 0;
+}
+.section-row {
+  min-width: 0;
+  max-width: 100%;
+}
 .section {
   /* セクション間に明確な区切り */
   padding: 14px 0;
@@ -158,7 +190,9 @@ button:hover { background: #2d3340; }
   scroll-snap-align: start;
 }
 @media (max-width: 768px) {
-  .section-row .card { flex: 0 0 110px; }
+  .section-row .card {
+    flex: 0 0 110px;
+  }
 }
 
 .empty-state {
@@ -171,9 +205,17 @@ button:hover { background: #2d3340; }
   color: var(--text-dim);
   text-align: center;
 }
-.empty-state[hidden] { display: none; }
-.empty-icon { color: var(--text-dim); opacity: 0.6; }
-.empty-text { margin: 0; font-size: 14px; }
+.empty-state[hidden] {
+  display: none;
+}
+.empty-icon {
+  color: var(--text-dim);
+  opacity: 0.6;
+}
+.empty-text {
+  margin: 0;
+  font-size: 14px;
+}
 .empty-action {
   background: var(--surface);
   color: var(--text);
@@ -183,7 +225,9 @@ button:hover { background: #2d3340; }
   font-size: 13px;
   cursor: pointer;
 }
-.empty-action:hover { border-color: var(--accent, #7aa2f7); }
+.empty-action:hover {
+  border-color: var(--accent, #7aa2f7);
+}
 
 .search-input-wrap {
   position: relative;
@@ -233,10 +277,19 @@ button:hover { background: #2d3340; }
   color: var(--text);
   background: rgba(255, 255, 255, 0.05);
 }
-.search-clear[hidden] { display: none; }
-.status { color: var(--text-dim); font-size: 12px; }
-.status.ok { color: var(--ok); }
-.status.error { color: var(--danger); }
+.search-clear[hidden] {
+  display: none;
+}
+.status {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.status.ok {
+  color: var(--ok);
+}
+.status.error {
+  color: var(--danger);
+}
 
 .menu-toggle {
   display: none;
@@ -265,9 +318,21 @@ button:hover { background: #2d3340; }
   align-self: start;
   height: calc(100dvh - var(--topbar-h) - var(--safe-top));
 }
-.sidebar h2 { font-size: 13px; color: var(--text-dim); margin: 0 0 8px; text-transform: uppercase; letter-spacing: 1px; }
-.dir-list { list-style: none; margin: 0; padding: 0; }
-.dir-list li { margin: 2px 0; }
+.sidebar h2 {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.dir-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.dir-list li {
+  margin: 2px 0;
+}
 .dir-link {
   display: block;
   padding: 8px 10px;
@@ -275,10 +340,24 @@ button:hover { background: #2d3340; }
   color: var(--text);
   word-break: break-all;
 }
-.dir-link:hover { background: var(--surface-2); text-decoration: none; }
-.dir-link.active { background: var(--surface-2); color: var(--accent); }
-.dir-count { color: var(--text-dim); margin-left: 4px; font-size: 12px; }
-.dir-list-nested { padding-left: 14px; border-left: 1px dashed var(--border); margin-top: 2px; }
+.dir-link:hover {
+  background: var(--surface-2);
+  text-decoration: none;
+}
+.dir-link.active {
+  background: var(--surface-2);
+  color: var(--accent);
+}
+.dir-count {
+  color: var(--text-dim);
+  margin-left: 4px;
+  font-size: 12px;
+}
+.dir-list-nested {
+  padding-left: 14px;
+  border-left: 1px dashed var(--border);
+  margin-top: 2px;
+}
 .dir-summary {
   list-style: none;
   display: flex;
@@ -286,7 +365,9 @@ button:hover { background: #2d3340; }
   cursor: pointer;
   position: relative;
 }
-.dir-summary::-webkit-details-marker { display: none; }
+.dir-summary::-webkit-details-marker {
+  display: none;
+}
 .dir-summary::before {
   content: "▶";
   display: inline-block;
@@ -296,9 +377,20 @@ button:hover { background: #2d3340; }
   margin-right: 2px;
   transition: transform 0.15s ease;
 }
-details[open] > .dir-summary::before { transform: rotate(90deg); }
-.dir-summary .dir-link { flex: 1; }
-.sidebar-scrim { display: none; }
+details[open] > .dir-summary::before {
+  transform: rotate(90deg);
+}
+.dir-summary .dir-link {
+  flex: 1;
+}
+/* root セクションのトップレベル summary はラベルを少し強調 */
+.root-summary .dir-link {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.sidebar-scrim {
+  display: none;
+}
 
 .content {
   padding: 20px;
@@ -325,7 +417,10 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   cursor: pointer;
   transition: transform 0.1s, border-color 0.1s;
 }
-.card:hover { transform: translateY(-2px); border-color: var(--accent); }
+.card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+}
 .thumb {
   width: 100%;
   aspect-ratio: 3 / 4;
@@ -364,8 +459,9 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
 }
 .badge {
   position: absolute;
+  /* 右上は ★ お気に入りボタンの定位置なので、 既読バッジは左上に置く */
   top: 6px;
-  right: 6px;
+  left: 6px;
   background: var(--ok);
   color: #0f1115;
   padding: 2px 6px;
@@ -373,7 +469,134 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   border-radius: 4px;
   font-weight: 600;
 }
-.badge.unread { background: var(--accent); }
+.badge.unread {
+  background: var(--accent);
+}
+
+/* ---------- カード上のお気に入りボタン (右上) ---------- */
+.card-favorite-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: #ffd54a;
+  font-size: 24px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.08s, color 0.12s;
+  -webkit-tap-highlight-color: transparent;
+  /* タップ後に残るブラウザ既定の focus ring を消す
+     (キーボード操作時のみ :focus-visible で別途 outline を付ける) */
+  outline: none;
+  /* グローバルの button border-radius(6px) を上書き。 円形にすることで
+     focus 時にも矩形が見えないようにする */
+  border-radius: 50%;
+  /* サムネの色に依存しないよう、 文字に多重の黒い縁取りを付ける。
+     box-shadow は使わず text-shadow を 4 方向 + 中央ブラーで囲む。 */
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.85),
+    1px -1px 0 rgba(0, 0, 0, 0.85),
+    -1px 1px 0 rgba(0, 0, 0, 0.85),
+    1px 1px 0 rgba(0, 0, 0, 0.85),
+    0 0 4px rgba(0, 0, 0, 0.55);
+  /* タッチ環境では常時表示してタップで toggle できるようにする */
+  opacity: 1;
+}
+.card-favorite-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 50%;
+}
+/* グローバル button:hover の灰色背景を打ち消し、 ★ は字だけ拡大する */
+.card-favorite-btn:hover,
+.card-favorite-btn:focus,
+.card-favorite-btn:active {
+  background: transparent;
+}
+.card-favorite-btn:hover {
+  transform: scale(1.1);
+}
+/* 未設定の ☆ はかなり控えめに。 ほぼ透けるくらいの薄さで、
+   サムネを邪魔せずタップターゲットだけ確保する。 */
+.card:not(.is-favorited) .card-favorite-btn {
+  color: rgba(255, 255, 255, 0.28);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+/* ホバー/フォーカス時のみはっきり見せて操作可能感を出す */
+.card:not(.is-favorited) .card-favorite-btn:hover,
+.card:not(.is-favorited) .card-favorite-btn:focus-visible {
+  color: rgba(255, 255, 255, 0.9);
+}
+/* デスクトップ (マウス利用) では未設定の ☆ を控えめに。
+   お気に入り済みは常時表示、 未設定はカードホバー / フォーカス時のみ表示。 */
+@media (hover: hover) {
+  .card:not(.is-favorited) .card-favorite-btn {
+    opacity: 0;
+    transition: opacity 0.12s, background 0.12s, transform 0.08s;
+  }
+  .card:hover .card-favorite-btn,
+  .card-favorite-btn:focus-visible {
+    opacity: 1;
+  }
+}
+
+/* サムネは長押し時の保存メニューを抑制 (iOS Safari など) */
+.thumb {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* ---------- ツールバーの「★ お気に入りのみ」 トグル ---------- */
+.favorite-toggle {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  user-select: none;
+}
+.favorite-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.favorite-toggle-icon {
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text-dim);
+  transition: color 0.1s, transform 0.08s;
+}
+.favorite-toggle input:checked + .favorite-toggle-icon {
+  color: #f1d061;
+  transform: scale(1.1);
+}
+.favorite-toggle:hover .favorite-toggle-icon {
+  color: var(--text);
+}
+.favorite-toggle input:checked + .favorite-toggle-icon:hover {
+  color: #f1d061;
+}
+.favorite-toggle input:focus-visible + .favorite-toggle-icon {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---------- サイドバーの「★ お気に入り」 行 ---------- */
+.dir-link.favorite-link {
+  color: #f1d061;
+}
+.dir-link.favorite-link.active {
+  background: var(--surface-2);
+}
 
 /* ---------- Settings page ---------- */
 .settings {
@@ -411,6 +634,37 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   font-size: 12px;
   word-break: break-all;
 }
+.library-roots-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 8px 0 12px;
+}
+.library-roots-table th, .library-roots-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.library-roots-table th {
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 12px;
+}
+.library-roots-table td code {
+  background: var(--surface-2);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  word-break: break-all;
+}
+.library-roots-table .num {
+  text-align: right;
+  white-space: nowrap;
+}
+.library-roots-table .muted {
+  color: var(--text-dim);
+}
 /* 確認ダイアログ (再インデックスのモード選択など) */
 .modal {
   position: fixed;
@@ -423,7 +677,9 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   padding-bottom: max(16px, calc(16px + var(--safe-bottom)));
   padding-top: max(16px, calc(16px + var(--safe-top)));
 }
-.modal[hidden] { display: none; }
+.modal[hidden] {
+  display: none;
+}
 .modal-backdrop {
   position: absolute;
   inset: 0;
@@ -471,12 +727,16 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   cursor: pointer;
   text-align: left;
 }
-.modal-btn:hover { border-color: var(--accent, #7aa2f7); }
+.modal-btn:hover {
+  border-color: var(--accent, #7aa2f7);
+}
 .modal-btn-primary {
   background: rgba(122, 162, 247, 0.12);
   border-color: rgba(122, 162, 247, 0.6);
 }
-.modal-btn-primary:hover { border-color: rgba(122, 162, 247, 1); }
+.modal-btn-primary:hover {
+  border-color: rgba(122, 162, 247, 1);
+}
 .modal-btn-cancel {
   align-items: center;
   background: transparent;
@@ -504,7 +764,9 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   border: 1px solid rgba(122, 162, 247, 0.4);
   border-radius: 8px;
 }
-.reindex-banner[hidden] { display: none; }
+.reindex-banner[hidden] {
+  display: none;
+}
 .reindex-banner.done {
   background: rgba(46, 160, 67, 0.08);
   border-color: rgba(46, 160, 67, 0.4);
@@ -559,9 +821,18 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   animation: indeterminateBar 1.4s ease-in-out infinite;
 }
 @keyframes indeterminateBar {
-  0% { margin-left: 0%; width: 20%; }
-  50% { margin-left: 30%; width: 40%; }
-  100% { margin-left: 100%; width: 20%; }
+  0% {
+    margin-left: 0%;
+    width: 20%;
+  }
+  50% {
+    margin-left: 30%;
+    width: 40%;
+  }
+  100% {
+    margin-left: 100%;
+    width: 20%;
+  }
 }
 .reindex-banner-detail {
   font-size: 13px;
@@ -599,7 +870,9 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   gap: 12px;
   padding: 6px 0;
 }
-.settings-row > span:first-child { color: var(--text-dim); }
+.settings-row > span:first-child {
+  color: var(--text-dim);
+}
 
 /* ---------- Viewer ---------- */
 .viewer-body {
@@ -660,10 +933,18 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   will-change: transform;
 }
 /* RTL (漫画): 見開きで右ページが先、左ページが後ろ */
-.pages.dir-rtl { flex-direction: row-reverse; }
+.pages.dir-rtl {
+  flex-direction: row-reverse;
+}
 /* ナビボタン (デスクトップ): RTL時に左右の機能を入れ替え */
-.stage.dir-rtl .nav-prev { left: auto; right: calc(8px + var(--safe-right)); }
-.stage.dir-rtl .nav-next { right: auto; left: calc(8px + var(--safe-left)); }
+.stage.dir-rtl .nav-prev {
+  left: auto;
+  right: calc(8px + var(--safe-right));
+}
+.stage.dir-rtl .nav-next {
+  right: auto;
+  left: calc(8px + var(--safe-left));
+}
 .pages img {
   user-select: none;
   -webkit-user-drag: none;
@@ -679,7 +960,9 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   pointer-events: none;
   z-index: 3;
 }
-.loader[hidden] { display: none; }
+.loader[hidden] {
+  display: none;
+}
 .spinner {
   width: 36px;
   height: 36px;
@@ -689,7 +972,9 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 上端の自動送り進捗バー (auto-advance が ON のときだけ表示)。
@@ -704,7 +989,9 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   pointer-events: none;
   z-index: 4;
 }
-.auto-progress-bar[hidden] { display: none; }
+.auto-progress-bar[hidden] {
+  display: none;
+}
 .auto-progress-bar-fill {
   display: block;
   height: 100%;
@@ -726,7 +1013,11 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   align-items: center;
   flex-wrap: wrap;
 }
-.auto-adv-title { color: var(--text-dim); font-size: 13px; min-width: 56px; }
+.auto-adv-title {
+  color: var(--text-dim);
+  font-size: 13px;
+  min-width: 56px;
+}
 /* スライダーをフルカスタムスタイル化。
    ラッパー .auto-adv-slider-wrap で thumb 半径ぶん左右にはみ出させ、
    thumb が track と input の左右端まで揃って到達するようにする。 */
@@ -746,11 +1037,14 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   outline: none;
   height: 22px;
   padding: 0;
-  margin: 0 -9px; /* 半径分を外側に出して thumb 中心が input の "外側端" まで届く */
+  margin: 0
+    -9px; /* 半径分を外側に出して thumb 中心が input の "外側端" まで届く */
   width: calc(100% + 18px);
   cursor: pointer;
 }
-#auto-adv-sec[type="range"]:focus { outline: none; }
+#auto-adv-sec[type="range"]:focus {
+  outline: none;
+}
 #auto-adv-sec[type="range"]::-webkit-slider-runnable-track {
   width: 100%;
   height: 4px;
@@ -786,7 +1080,7 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   background: var(--accent, #7aa2f7);
   border: none;
   cursor: pointer;
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.4);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
 }
 #auto-adv-sec[type="range"]::-moz-range-thumb {
   width: 18px;
@@ -795,7 +1089,7 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   background: var(--accent, #7aa2f7);
   border: none;
   cursor: pointer;
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.4);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
 }
 .auto-adv-value {
   font-variant-numeric: tabular-nums;
@@ -820,7 +1114,10 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   background: rgba(220, 180, 80, 0.18);
   border-color: rgba(220, 180, 80, 0.6);
 }
-.auto-pause-icon { font-size: 14px; line-height: 1; }
+.auto-pause-icon {
+  font-size: 14px;
+  line-height: 1;
+}
 
 /* 底部進捗バー (常時表示、 細く半透明) */
 .progress-bar {
@@ -852,9 +1149,20 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   height: auto;
   object-fit: contain;
 }
-.pages:not(.spread).fit-width img { width: 100%; height: auto; max-height: 100%; }
-.pages:not(.spread).fit-height img { height: 100%; width: auto; max-width: 100%; }
-.pages:not(.spread).fit-contain img { max-width: 100%; max-height: 100%; }
+.pages:not(.spread).fit-width img {
+  width: 100%;
+  height: auto;
+  max-height: 100%;
+}
+.pages:not(.spread).fit-height img {
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+}
+.pages:not(.spread).fit-contain img {
+  max-width: 100%;
+  max-height: 100%;
+}
 
 /* ---------- 見開き表示 ---------- */
 /* flex item を grow させず、 各画像が自身のアスペクト比でくっついて並ぶようにする。
@@ -870,8 +1178,18 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   max-height: 100%;
   object-fit: contain;
 }
-.pages.spread.fit-width img { height: auto; max-width: 50%; width: 50%; max-height: 100%; }
-.pages.spread.fit-contain img { height: auto; width: auto; max-width: 50%; max-height: 100%; }
+.pages.spread.fit-width img {
+  height: auto;
+  max-width: 50%;
+  width: 50%;
+  max-height: 100%;
+}
+.pages.spread.fit-contain img {
+  height: auto;
+  width: auto;
+  max-width: 50%;
+  max-height: 100%;
+}
 
 /* ---------- 統合メニューオーバーレイ (中央タップで開く) ---------- */
 /* viewport下端に固定し、SafeArea(ホームインジケータ)分を内部paddingで確保。 */
@@ -881,7 +1199,9 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   background: transparent;
   z-index: 49;
 }
-.menu-backdrop[hidden] { display: none; }
+.menu-backdrop[hidden] {
+  display: none;
+}
 
 .menu-overlay {
   position: fixed;
@@ -906,12 +1226,22 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   /* スライドイン風 */
   animation: menuSlideUp 0.18s ease-out;
 }
-.menu-overlay[hidden] { display: none; }
-@keyframes menuSlideUp {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
+.menu-overlay[hidden] {
+  display: none;
 }
-.menu-row { display: flex; align-items: center; gap: 8px; }
+@keyframes menuSlideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+.menu-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
 .meta-panel {
   display: flex;
@@ -947,9 +1277,17 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   -webkit-mask-image: none;
   mask-image: none;
 }
-.meta-panel[hidden] { display: none; }
-.meta-row { display: flex; gap: 10px; align-items: flex-start; }
-.meta-row[hidden] { display: none; }
+.meta-panel[hidden] {
+  display: none;
+}
+.meta-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.meta-row[hidden] {
+  display: none;
+}
 .meta-label {
   flex: 0 0 56px;
   color: var(--text-dim);
@@ -965,7 +1303,12 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   gap: 4px;
   align-items: center;
 }
-.meta-tags { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+.meta-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+}
 .meta-tag {
   background: var(--surface-2, #1a1d23);
   border: 1px solid var(--border);
@@ -981,7 +1324,12 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   color: var(--accent, #7aa2f7);
   text-decoration: none;
 }
-.menu-row label { display: flex; align-items: center; gap: 6px; color: var(--text-dim); }
+.menu-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+}
 .menu-header .book-title {
   font-size: 14px;
   color: var(--text);
@@ -993,24 +1341,43 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   border: 1px solid var(--border);
   border-radius: 6px;
 }
-.menu-settings { flex-wrap: wrap; gap: 14px; }
-.menu-settings label { font-size: 13px; }
-.menu-settings select { font-size: 13px; padding: 4px 8px; }
-.seek-row { display: flex; align-items: center; gap: 8px; }
+.menu-settings {
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.menu-settings label {
+  font-size: 13px;
+}
+.menu-settings select {
+  font-size: 13px;
+  padding: 4px 8px;
+}
+.seek-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 /* シークバーはブラウザデフォルトの見た目を尊重 (accent-colorのみ統一)。 */
 .menu-overlay input[type="range"] {
   flex: 1;
   accent-color: var(--accent);
   height: 32px;
 }
-.seek-info { font-size: 13px; color: var(--text-dim); }
-.seek-label { color: var(--text-dim); }
+.seek-info {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.seek-label {
+  color: var(--text-dim);
+}
 .seek-info input[type="number"] {
   width: 80px;
   text-align: right;
   padding: 4px 8px;
 }
-.seek-info .seek-total { flex: 1; }
+.seek-info .seek-total {
+  flex: 1;
+}
 .seek-close {
   background: transparent;
   border: 1px solid var(--border);
@@ -1026,7 +1393,41 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   padding: 8px 14px;
   font-size: 14px;
 }
-.finish-btn:hover { background: var(--accent); color: #0f1115; }
+.finish-btn:hover {
+  background: var(--accent);
+  color: #0f1115;
+}
+/* ビューワーのメニューシート内お気に入りトグル */
+.meta-favorite {
+  padding: 4px 0;
+}
+.favorite-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.favorite-btn .favorite-btn-icon {
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+}
+.favorite-btn.is-favorited {
+  border-color: #f1d061;
+  color: #f1d061;
+}
+.favorite-btn.is-favorited .favorite-btn-icon {
+  color: #f1d061;
+}
+.favorite-btn:hover {
+  background: var(--surface);
+}
 
 .nav-prev, .nav-next {
   position: absolute;
@@ -1042,9 +1443,15 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   opacity: 0.6;
   z-index: 10;
 }
-.nav-prev:hover, .nav-next:hover { opacity: 1; }
-.nav-prev { left: calc(8px + var(--safe-left)); }
-.nav-next { right: calc(8px + var(--safe-right)); }
+.nav-prev:hover, .nav-next:hover {
+  opacity: 1;
+}
+.nav-prev {
+  left: calc(8px + var(--safe-left));
+}
+.nav-next {
+  right: calc(8px + var(--safe-right));
+}
 
 /* タッチ操作用の透明な左右タップ領域 (モバイル時のみ表示) */
 .tap-zone {
@@ -1055,26 +1462,51 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
   width: 30%;
   z-index: 5;
 }
-.tap-zone.tap-prev { left: 0; }
-.tap-zone.tap-next { right: 0; }
+.tap-zone.tap-prev {
+  left: 0;
+}
+.tap-zone.tap-next {
+  right: 0;
+}
 
 /* ============== モバイル: 768px以下 ============== */
 @media (max-width: 768px) {
-  .menu-toggle { display: block; }
-  .topbar h1 { font-size: 16px; }
-  .toolbar { gap: 6px; flex-wrap: wrap; min-width: 0; }
-  .toolbar #reindex { font-size: 12px; padding: 6px 8px; }
-  .toolbar #sort { font-size: 12px; padding: 6px 6px; }
+  .menu-toggle {
+    display: block;
+  }
+  .topbar h1 {
+    font-size: 16px;
+  }
+  .toolbar {
+    gap: 6px;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .toolbar #reindex {
+    font-size: 12px;
+    padding: 6px 8px;
+  }
+  .toolbar #sort {
+    font-size: 12px;
+    padding: 6px 6px;
+  }
   /* モバイルでは検索入力を縮められるよう min-width を解除し、 段折り時にも溢れない */
-  .search-label { flex: 1 1 100%; min-width: 0; }
+  .search-label {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
   .search-label input[type="search"] {
     min-width: 0;
     width: 100%;
     box-sizing: border-box;
   }
-  .status { display: none; }
+  .status {
+    display: none;
+  }
 
-  .main { grid-template-columns: 1fr; }
+  .main {
+    grid-template-columns: 1fr;
+  }
 
   /* モバイル: サイドバーはドロワー化。閉じている時はdisplay:noneで完全除去 */
   .sidebar {
@@ -1087,7 +1519,7 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
     max-width: 280px;
     padding-top: calc(16px + var(--safe-top));
     z-index: 40;
-    box-shadow: 4px 0 12px rgba(0,0,0,0.4);
+    box-shadow: 4px 0 12px rgba(0, 0, 0, 0.4);
   }
   body.sidebar-open .sidebar {
     display: block;
@@ -1096,7 +1528,7 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
     display: block;
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.5);
+    background: rgba(0, 0, 0, 0.5);
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s;
@@ -1107,21 +1539,52 @@ details[open] > .dir-summary::before { transform: rotate(90deg); }
     pointer-events: auto;
   }
 
-  .grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
-  .content { padding: 12px; padding-bottom: calc(12px + var(--safe-bottom)); }
-  .card-title { font-size: 12px; padding: 6px 8px; }
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 10px;
+  }
+  .content {
+    padding: 12px;
+    padding-bottom: calc(12px + var(--safe-bottom));
+  }
+  .card-title {
+    font-size: 12px;
+    padding: 6px 8px;
+  }
 
   /* ビューワー: ナビボタンは隠してタップゾーンで操作 */
-  .nav-prev, .nav-next { display: none; }
-  .tap-zone { display: block; }
-  .viewer-bar { padding: 6px 10px; padding-top: calc(6px + var(--safe-top)); }
-  .book-title { font-size: 13px; }
-  .settings-panel { padding: 10px; gap: 12px; font-size: 13px; }
+  .nav-prev, .nav-next {
+    display: none;
+  }
+  .tap-zone {
+    display: block;
+  }
+  .viewer-bar {
+    padding: 6px 10px;
+    padding-top: calc(6px + var(--safe-top));
+  }
+  .book-title {
+    font-size: 13px;
+  }
+  .settings-panel {
+    padding: 10px;
+    gap: 12px;
+    font-size: 13px;
+  }
 }
 
 /* ============== さらに狭い画面 (iPhone SE 等): 380px以下 ============== */
 @media (max-width: 380px) {
-  .topbar { gap: 6px; padding-left: 10px; padding-right: 10px; }
-  .topbar h1 { font-size: 15px; }
-  .toolbar #reindex { padding: 5px 6px; font-size: 11px; }
+  .topbar {
+    gap: 6px;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  .topbar h1 {
+    font-size: 15px;
+  }
+  .toolbar #reindex {
+    padding: 5px 6px;
+    font-size: 11px;
+  }
 }

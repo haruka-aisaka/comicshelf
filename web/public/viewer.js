@@ -1,8 +1,5 @@
 // @ts-check
-import {
-  alignToPair as alignToPairPure,
-  clamp,
-} from "/lib/viewer_util.js";
+import { alignToPair as alignToPairPure, clamp } from "/lib/viewer_util.js";
 import { createAutoAdvance } from "/lib/auto_advance.js";
 import("/sw-register.js").catch(() => {});
 /**
@@ -53,7 +50,8 @@ const autoBarFill = /** @type {HTMLElement|null} */ (
   document.querySelector("#auto-progress-bar .auto-progress-bar-fill")
 );
 const autoAdvSel = /** @type {HTMLInputElement|null} */ (document.querySelector("#auto-adv-sec"));
-const autoPauseBtn = /** @type {HTMLButtonElement|null} */ (document.querySelector("#auto-adv-pause"));
+const autoPauseBtn =
+  /** @type {HTMLButtonElement|null} */ (document.querySelector("#auto-adv-pause"));
 const loaderEl = /** @type {HTMLElement|null} */ (document.querySelector("#loader"));
 /** @type {number|undefined} スピナー表示の遅延タイマー */
 let loaderTimer;
@@ -120,7 +118,6 @@ const AutoAdvance = createAutoAdvance({
   },
 });
 
-
 /** ピンチ拡大state */
 let zoomScale = 1;
 let zoomTx = 0;
@@ -170,6 +167,7 @@ async function init() {
   const displayTitle = bookData.comicInfo?.title ?? bookData.book.title;
   titleEl.textContent = displayTitle;
   applyMetaPanel(bookData.comicInfo);
+  applyFavoriteState(bookData.favorite?.favorited === true);
 
   // ユーザーが direction を明示保存していない & ComicInfo に manga ヒントがあれば反映
   if (!localStorage.getItem(DIRECTION_KEY) && bookData.comicInfo?.manga) {
@@ -565,7 +563,9 @@ function bindTouchAndTap() {
     //   target が overlay/button/input/select 内ならスキップ
     //   (touchend の target は touchstart した要素なので overlay 内のボタンタッチを除外できる)
     if (!movedSwipe && elapsed < 750 && absDx < 10 && absDy < 10) {
-      if (e.target instanceof HTMLElement && e.target.closest("button, input, select, .menu-overlay")) {
+      if (
+        e.target instanceof HTMLElement && e.target.closest("button, input, select, .menu-overlay")
+      ) {
         return;
       }
       handleTap(t.clientX, t.clientY);
@@ -580,7 +580,9 @@ function bindTouchAndTap() {
       suppressNextGesture = false;
       return;
     }
-    if (e.target instanceof HTMLElement && e.target.closest("button, input, select, .menu-overlay")) return;
+    if (
+      e.target instanceof HTMLElement && e.target.closest("button, input, select, .menu-overlay")
+    ) return;
     handleTap(e.clientX, e.clientY);
   });
 
@@ -735,8 +737,10 @@ function alignToPair(n) {
 function applyMetaPanel(comicInfo) {
   const panel = document.querySelector("#meta-panel");
   if (!panel) return;
+  // お気に入りボタンを必ず出すため、 panel 自体は常に表示する
+  panel.removeAttribute("hidden");
   if (!comicInfo) {
-    panel.setAttribute("hidden", "");
+    // ComicInfo がない書籍では series/author/tags 行は既に hidden のまま
     return;
   }
   /** @param {string} field, @param {string} text */
@@ -1042,4 +1046,44 @@ async function finishAndClose() {
     console.warn("既読化失敗", e);
   }
   location.href = "/";
+}
+
+/* ---------- お気に入り ---------- */
+
+let favoritedState = false;
+
+/** メニューシートの ★ ボタンの見た目を state に合わせて更新 */
+function applyFavoriteState(favorited) {
+  favoritedState = favorited;
+  const btn = document.querySelector("#favorite-toggle");
+  if (!(btn instanceof HTMLElement)) return;
+  btn.setAttribute("aria-pressed", favorited ? "true" : "false");
+  btn.classList.toggle("is-favorited", favorited);
+  const iconEl = btn.querySelector(".favorite-btn-icon");
+  if (iconEl) iconEl.textContent = favorited ? "★" : "☆";
+  const labelEl = btn.querySelector(".favorite-btn-label");
+  if (labelEl) labelEl.textContent = favorited ? "お気に入り中" : "お気に入りに追加";
+}
+
+// 起動時に 1 度だけハンドラを登録
+const favoriteToggleBtn = document.querySelector("#favorite-toggle");
+if (favoriteToggleBtn instanceof HTMLElement) {
+  favoriteToggleBtn.addEventListener("click", async () => {
+    if (!Number.isFinite(bookId)) return;
+    const next = !favoritedState;
+    // 楽観更新
+    applyFavoriteState(next);
+    try {
+      const res = await fetch(`/api/books/${bookId}/favorite`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ favorited: next }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      console.warn("お気に入り更新失敗", e);
+      // ロールバック
+      applyFavoriteState(!next);
+    }
+  });
 }

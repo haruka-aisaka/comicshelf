@@ -22,15 +22,15 @@ export class LibraryService {
   }
 
   resolvePath(book: Book): string | null {
-    for (const root of this.config.library.roots) {
-      const absRoot = isAbsolute(root) ? root : normalize(root);
-      const candidate = normalize(join(absRoot, book.path));
-      if (!candidate.startsWith(absRoot + "/") && candidate !== absRoot) {
-        continue;
-      }
-      return candidate;
+    const root = this.config.library.roots.find((r) => r.id === book.rootId);
+    if (!root) return null; // config.json から消された root に属する orphan レコード
+    const absRoot = isAbsolute(root.path) ? root.path : normalize(root.path);
+    const candidate = normalize(join(absRoot, book.path));
+    // パストラバーサル対策: 正規化結果が root の外に出ていないことを確認
+    if (!candidate.startsWith(absRoot + "/") && candidate !== absRoot) {
+      return null;
     }
-    return null;
+    return candidate;
   }
 
   resolveBook(bookId: number): { book: Book; absPath: string } | null {

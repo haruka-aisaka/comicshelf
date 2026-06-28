@@ -9,9 +9,13 @@ const $ = (sel) => /** @type {HTMLElement} */ (document.querySelector(sel));
 const grid = $("#grid");
 const empty = $("#empty");
 const emptyText = $("#empty-text");
-const clearFiltersBtn = /** @type {HTMLButtonElement|null} */ (document.querySelector("#clear-filters"));
+const clearFiltersBtn =
+  /** @type {HTMLButtonElement|null} */ (document.querySelector("#clear-filters"));
 const sortSel = /** @type {HTMLSelectElement} */ ($("#sort"));
 const filterSel = /** @type {HTMLSelectElement} */ ($("#status-filter"));
+const favoritedFilter = /** @type {HTMLInputElement|null} */ (
+  document.querySelector("#favorited-filter")
+);
 const searchInput = /** @type {HTMLInputElement|null} */ (document.querySelector("#search"));
 const searchClearBtn = /** @type {HTMLButtonElement|null} */ (
   document.querySelector("#search-clear")
@@ -19,8 +23,14 @@ const searchClearBtn = /** @type {HTMLButtonElement|null} */ (
 const statusEl = /** @type {HTMLElement} */ (document.querySelector(".topbar .status"));
 const dirList = $("#directories");
 
-/** @type {{sort: string, directory: string, status: string, query: string}} */
+/** @type {{sort: string, directory: string, rootId: string, status: string, query: string, favorited: boolean}} */
 const state = readQuery();
+
+/** /api/config から取得した roots ({id, name, bookCount}) のキャッシュ */
+/** @type {Array<{id: string, name: string, bookCount: number}>} */
+let knownRoots = [];
+/** /api/config から取得したお気に入り総件数 (サイドバーの ★ 行に表示) */
+let favoritesCount = 0;
 
 /** フォーム要素を state (= URL) に合わせて再同期。
  *  初回ロード時、 BFCache から復元時 (pageshow.persisted=true) で呼ぶ。
@@ -28,12 +38,14 @@ const state = readQuery();
 function syncFormFromState() {
   sortSel.value = state.sort;
   if (filterSel) filterSel.value = state.status;
+  if (favoritedFilter) favoritedFilter.checked = state.favorited;
   if (searchInput) searchInput.value = state.query;
   updateSearchClearVisibility();
 }
 
 sortSel.value = state.sort;
 if (filterSel) filterSel.value = state.status;
+if (favoritedFilter) favoritedFilter.checked = state.favorited;
 if (searchInput) searchInput.value = state.query;
 
 /** URL から state を読み直してフォームに反映 */
@@ -41,7 +53,9 @@ function reloadStateFromUrl() {
   const q = readQuery();
   state.sort = q.sort;
   state.directory = q.directory;
+  state.rootId = q.rootId;
   state.status = q.status;
+  state.favorited = q.favorited;
   state.query = q.query;
   syncFormFromState();
 }
@@ -49,11 +63,14 @@ function reloadStateFromUrl() {
 // BFCache 復元時にフォームを URL から再同期 (iOS Safari で input.value が
 // 空にリセットされる挙動の対策)。 iOS Safari の form auto-restore は
 // pageshow より遅れて動く場合があるため、 多段で再試行する。
+// さらに、 ビューワー側で書籍の状態 (お気に入り / 既読) を変えてから戻った
+// 場合に一覧を最新化するため、 サーバから取り直す。
 window.addEventListener("pageshow", (e) => {
   if (e.persisted) {
     reloadStateFromUrl();
     setTimeout(reloadStateFromUrl, 50);
     setTimeout(reloadStateFromUrl, 200);
+    refreshFromServer();
   }
 });
 
@@ -64,6 +81,20 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+/**
+ * サーバから状態を取り直す (お気に入り / 既読など、 別画面で変わった可能性が
+ * あるもの)。 BFCache 復元時に呼び出す。 grid を一旦置き換えるが、 scroll
+ * 位置は維持される (loadBooks は window.scrollTo を呼ばない)。
+ */
+async function refreshFromServer() {
+  try {
+    await loadConfig();
+    await Promise.all([loadDirectories(), loadBooks(), loadSections()]);
+  } catch (e) {
+    console.warn("refreshFromServer failed:", e);
+  }
+}
+
 sortSel.addEventListener("change", () => {
   state.sort = sortSel.value;
   writeQuery();
@@ -72,6 +103,14 @@ sortSel.addEventListener("change", () => {
 if (filterSel) {
   filterSel.addEventListener("change", () => {
     state.status = filterSel.value;
+    writeQuery();
+    loadBooks();
+    loadSections();
+  });
+}
+if (favoritedFilter) {
+  favoritedFilter.addEventListener("change", () => {
+    state.favorited = favoritedFilter.checked;
     writeQuery();
     loadBooks();
     loadSections();
@@ -124,8 +163,23 @@ if (searchClearBtn) {
 }
 
 async function refresh() {
+  // /api/config を先に読んで roots を確定させてから directories を描画する
+  await loadConfig();
   await Promise.all([loadDirectories(), loadBooks(), loadSections()]);
   restoreScroll();
+}
+
+async function loadConfig() {
+  try {
+    const res = await fetch("/api/config");
+    if (!res.ok) return;
+    const data = await res.json();
+    knownRoots = data.library?.roots ?? [];
+    favoritesCount = data.library?.favoritesCount ?? 0;
+  } catch {
+    knownRoots = [];
+    favoritesCount = 0;
+  }
 }
 
 function restoreScroll() {
@@ -145,7 +199,8 @@ async function loadSections() {
   if (!container) return;
   // セクションは「フィルタ無し」 (= 検索/ディレクトリ絞り込みなし) のときだけ表示。
   // 何らかの絞り込みがあると認知負荷が増えるので非表示にする。
-  const hasFilter = state.directory !== "" || state.query !== "" || state.status !== "all";
+  const hasFilter = state.directory !== "" || state.query !== "" ||
+    state.status !== "all" || state.favorited || state.rootId !== "";
   if (hasFilter) {
     container.hidden = true;
     return;
@@ -191,25 +246,74 @@ async function loadSections() {
 async function loadDirectories() {
   const res = await fetch("/api/directories");
   const data = await res.json();
-  /** @type {Array<{directory: string, bookCount: number}>} */
+  /** @type {Array<{rootId: string, directory: string, bookCount: number}>} */
   const dirs = data.directories;
   dirList.innerHTML = "";
-  // 「すべて」 リンクは特別扱い (全件)
+  // 「すべて」 リンクは特別扱い (root も directory も無指定で全件)
   const allItem = document.createElement("li");
-  allItem.appendChild(makeDirLinkAnchor("", "すべて", null));
+  allItem.appendChild(makeRootDirLinkAnchor(null, "", "すべて", null));
   dirList.appendChild(allItem);
+  // 「お気に入り」 リンクはサイドバー固定
+  const favItem = document.createElement("li");
+  favItem.appendChild(makeFavoriteFilterAnchor(favoritesCount));
+  dirList.appendChild(favItem);
 
-  // ツリーへ組み立て
-  const tree = buildDirTree(dirs);
-  for (const node of tree.children.values()) {
-    dirList.appendChild(renderDirNode(node));
+  // root 単位にグルーピング (1 つしか無いときはフラット表示で従来互換)
+  /** @type {Map<string, Array<{rootId: string, directory: string, bookCount: number}>>} */
+  const byRoot = new Map();
+  for (const d of dirs) {
+    if (!byRoot.has(d.rootId)) byRoot.set(d.rootId, []);
+    byRoot.get(d.rootId).push(d);
+  }
+  // 表示順は config.json での定義順 (knownRoots) を優先、 未登録 (orphan) は末尾
+  const orderedRootIds = [
+    ...knownRoots.map((r) => r.id).filter((id) => byRoot.has(id)),
+    ...Array.from(byRoot.keys()).filter((id) => !knownRoots.some((r) => r.id === id)),
+  ];
+  const multipleRoots = orderedRootIds.length > 1;
+
+  for (const rootId of orderedRootIds) {
+    const rootDirs = byRoot.get(rootId) ?? [];
+    const tree = buildDirTree(rootDirs);
+    if (multipleRoots) {
+      // ルートセクション: <details> で root 単位に折りたためる
+      const li = document.createElement("li");
+      const details = document.createElement("details");
+      // active ルートまたは未指定なら開く
+      if (state.rootId === "" || state.rootId === rootId) details.open = true;
+      const summary = document.createElement("summary");
+      summary.className = "dir-summary root-summary";
+      const rootMeta = knownRoots.find((r) => r.id === rootId);
+      const rootLabel = rootMeta?.name ?? rootId;
+      const rootCount = rootDirs.reduce((acc, d) => acc + d.bookCount, 0);
+      const a = makeRootDirLinkAnchor(rootId, "", rootLabel, rootCount);
+      a.addEventListener("click", (e) => e.stopPropagation());
+      summary.appendChild(a);
+      details.appendChild(summary);
+      const ul = document.createElement("ul");
+      ul.className = "dir-list dir-list-nested";
+      for (const node of tree.children.values()) {
+        ul.appendChild(renderDirNode(node, rootId));
+      }
+      details.appendChild(ul);
+      li.appendChild(details);
+      dirList.appendChild(li);
+    } else {
+      // 単一 root: ルートラベル行は出さずに従来どおりフラット表示
+      for (const node of tree.children.values()) {
+        dirList.appendChild(renderDirNode(node, rootId));
+      }
+    }
   }
 }
 
 /**
  * @typedef {{name: string, fullPath: string, bookCount: number, children: Map<string, DirNode>}} DirNode
  */
-/** @returns {{children: Map<string, DirNode>}} */
+/**
+ * @param {Array<{directory: string, bookCount: number}>} dirs
+ * @returns {{children: Map<string, DirNode>}}
+ */
 function buildDirTree(dirs) {
   /** @type {{children: Map<string, DirNode>}} */
   const root = { children: new Map() };
@@ -249,29 +353,33 @@ function buildDirTree(dirs) {
   return root;
 }
 
-/** @param {DirNode} node */
-function renderDirNode(node) {
+/**
+ * @param {DirNode} node
+ * @param {string} rootId このノードが属する root の id
+ */
+function renderDirNode(node, rootId) {
   const li = document.createElement("li");
   const hasChildren = node.children.size > 0;
   // 子孫を含む総件数を計算
   const totalCount = sumDescendantBookCount(node);
   if (!hasChildren) {
-    li.appendChild(makeDirLinkAnchor(node.fullPath, node.name, totalCount));
+    li.appendChild(makeRootDirLinkAnchor(rootId, node.fullPath, node.name, totalCount));
     return li;
   }
   // 親ノード: <details> で開閉可能
   const details = document.createElement("details");
-  // 現在選択中ノードの祖先は自動で展開
+  // 現在選択中ノードの祖先は自動で展開 (同じ root のときのみ)
   if (
-    state.directory === node.fullPath ||
-    state.directory.startsWith(`${node.fullPath}/`)
+    state.rootId === rootId &&
+    (state.directory === node.fullPath ||
+      state.directory.startsWith(`${node.fullPath}/`))
   ) {
     details.open = true;
   }
   const summary = document.createElement("summary");
   summary.className = "dir-summary";
   // summary 全体クリックで toggle するため、 リンクは別途中身として配置
-  const a = makeDirLinkAnchor(node.fullPath, node.name, totalCount);
+  const a = makeRootDirLinkAnchor(rootId, node.fullPath, node.name, totalCount);
   // summary内クリックは details の toggle を発火させない (リンクの動作を優先)
   a.addEventListener("click", (e) => e.stopPropagation());
   summary.appendChild(a);
@@ -279,7 +387,7 @@ function renderDirNode(node) {
   const ul = document.createElement("ul");
   ul.className = "dir-list dir-list-nested";
   for (const child of node.children.values()) {
-    ul.appendChild(renderDirNode(child));
+    ul.appendChild(renderDirNode(child, rootId));
   }
   details.appendChild(ul);
   li.appendChild(details);
@@ -293,11 +401,20 @@ function sumDescendantBookCount(node) {
   return total;
 }
 
-function makeDirLinkAnchor(value, label, count) {
+/**
+ * ディレクトリ絞り込みリンク。
+ * @param {string|null} rootId 絞り込み対象の root id。 null なら root 指定なし (= 「すべて」)
+ * @param {string} dir 相対パス。 root 行をクリックする場合は ""
+ * @param {string} label
+ * @param {number|null} count 表示する件数 (null なら非表示)
+ */
+function makeRootDirLinkAnchor(rootId, dir, label, count) {
   const a = document.createElement("a");
   a.href = "#";
-  a.className = "dir-link" + (state.directory === value ? " active" : "");
-  a.dataset.dir = value;
+  const isActive = (rootId ?? "") === state.rootId && dir === state.directory;
+  a.className = "dir-link" + (isActive ? " active" : "");
+  a.dataset.dir = dir;
+  if (rootId !== null) a.dataset.root = rootId;
   a.textContent = label;
   if (count !== null) {
     const span = document.createElement("span");
@@ -307,7 +424,8 @@ function makeDirLinkAnchor(value, label, count) {
   }
   a.addEventListener("click", (e) => {
     e.preventDefault();
-    state.directory = value;
+    state.rootId = rootId ?? "";
+    state.directory = dir;
     writeQuery();
     document.querySelectorAll(".dir-link").forEach((el) => el.classList.remove("active"));
     a.classList.add("active");
@@ -320,6 +438,8 @@ function makeDirLinkAnchor(value, label, count) {
 async function loadBooks() {
   const params = new URLSearchParams({ sort: state.sort });
   if (state.directory !== "") params.set("directory", state.directory);
+  if (state.rootId !== "") params.set("root", state.rootId);
+  if (state.favorited) params.set("favorited", "1");
   if (state.status && state.status !== "all") params.set("status", state.status);
   if (state.query !== "") params.set("q", state.query);
   // 個別のreadStateを取らずに描画するため、未読バッジは表示時点のpageCount=null等で代用
@@ -339,7 +459,8 @@ async function loadBooks() {
 }
 
 async function renderEmptyState() {
-  const hasActiveFilter = state.directory !== "" || state.status !== "all" || state.query !== "";
+  const hasActiveFilter = state.directory !== "" || state.rootId !== "" ||
+    state.status !== "all" || state.query !== "" || state.favorited;
   if (hasActiveFilter) {
     emptyText.textContent = "条件に一致する書籍がありません。";
     if (clearFiltersBtn) clearFiltersBtn.hidden = false;
@@ -355,12 +476,18 @@ async function renderEmptyState() {
 if (clearFiltersBtn) {
   clearFiltersBtn.addEventListener("click", () => {
     state.directory = "";
+    state.rootId = "";
     state.status = "all";
     state.query = "";
+    state.favorited = false;
     if (filterSel) filterSel.value = "all";
+    if (favoritedFilter) favoritedFilter.checked = false;
     if (searchInput) searchInput.value = "";
     document.querySelectorAll(".dir-link").forEach((el) => el.classList.remove("active"));
-    const allLink = document.querySelector('.dir-link[data-dir=""]');
+    // 「すべて」 リンク (root/data-dir/お気に入りいずれも未指定) を選択状態に
+    const allLink = document.querySelector(
+      '.dir-link[data-dir=""]:not([data-root]):not([data-favorite])',
+    );
     if (allLink) allLink.classList.add("active");
     writeQuery();
     loadBooks();
@@ -378,11 +505,16 @@ const SCROLL_KEY = "comicshelf.listScrollY";
 function applyFilterByQuery(q) {
   state.query = q;
   state.directory = "";
+  state.rootId = "";
   state.status = "all";
+  state.favorited = false;
   if (searchInput) searchInput.value = q;
   if (filterSel) filterSel.value = "all";
+  if (favoritedFilter) favoritedFilter.checked = false;
   document.querySelectorAll(".dir-link").forEach((el) => el.classList.remove("active"));
-  const allLink = document.querySelector('.dir-link[data-dir=""]');
+  const allLink = document.querySelector(
+    '.dir-link[data-dir=""]:not([data-root]):not([data-favorite])',
+  );
   if (allLink) allLink.classList.add("active");
   writeQuery();
   loadBooks();
@@ -394,6 +526,8 @@ function makeCard(book) {
   const card = document.createElement("div");
   card.className = "card";
   card.dataset.id = String(book.id);
+  // card にお気に入り状態を保持して、 トグル後に再描画なしで反映できるようにする
+  if (book.favorited) card.classList.add("is-favorited");
   card.addEventListener("click", () => {
     sessionStorage.setItem(SCROLL_KEY, String(window.scrollY));
     location.href = `/viewer.html?book=${book.id}`;
@@ -410,6 +544,26 @@ function makeCard(book) {
     img.style.display = "none";
   };
   card.appendChild(img);
+
+  // ★ アイコン/ボタン: 右上に重ねる。
+  //   - お気に入り済み : 黄色 ★ を常時表示 (タップ可)
+  //   - 未設定        : 通常時は非表示、 hover/focus 時のみ ☆ を表示 (デスクトップ)
+  // どちらも .card-favorite-btn として実装し、 hover ボタンと状態バッジを統合。
+  const favBtn = document.createElement("button");
+  favBtn.type = "button";
+  favBtn.className = "card-favorite-btn";
+  favBtn.setAttribute(
+    "aria-label",
+    book.favorited ? "お気に入りを解除" : "お気に入りに追加",
+  );
+  favBtn.setAttribute("aria-pressed", book.favorited ? "true" : "false");
+  favBtn.textContent = book.favorited ? "★" : "☆";
+  favBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleFavorite(book, card, favBtn);
+  });
+  card.appendChild(favBtn);
 
   const title = document.createElement("div");
   title.className = "card-title";
@@ -448,7 +602,100 @@ function makeCard(book) {
     card.appendChild(badge);
   }
 
+  // デスクトップ向けの右クリック (contextmenu) でも ★ トグルを発火させる。
+  // スマホでは ★ ボタンが常時可視なのでタップで toggle、 長押しは無効。
+  card.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    toggleFavorite(book, card, favBtn);
+  });
   return card;
+}
+
+/**
+ * 1 件の書籍のお気に入り状態をトグルする。
+ *   - 楽観更新 → API 失敗時に元に戻す
+ *   - 画面上の同じ book.id のカードが複数あれば全て同期 (セクション + グリッドで重複表示)
+ */
+async function toggleFavorite(book, originCard, originBtn) {
+  const next = !book.favorited;
+  // 楽観更新
+  applyFavoriteToCards(book.id, next);
+  book.favorited = next;
+  try {
+    const res = await fetch(`/api/books/${book.id}/favorite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ favorited: next }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    favoritesCount += next ? 1 : -1;
+    if (favoritesCount < 0) favoritesCount = 0;
+    refreshFavoriteCountBadge();
+  } catch (e) {
+    // ロールバック
+    console.warn("favorite toggle failed:", e);
+    applyFavoriteToCards(book.id, !next);
+    book.favorited = !next;
+    setStatus(`お気に入り更新に失敗しました`, "error");
+  }
+  // フォーカスを戻す (誤クリック防止のためボタン自身に維持)
+  if (originBtn) originBtn.focus();
+  // 未使用引数の lint 回避
+  void originCard;
+}
+
+/** 画面上のすべての同 book.id カードの ★ 状態を反映 */
+function applyFavoriteToCards(bookId, favorited) {
+  document.querySelectorAll(`.card[data-id="${bookId}"]`).forEach((el) => {
+    el.classList.toggle("is-favorited", favorited);
+    const btn = el.querySelector(".card-favorite-btn");
+    if (btn instanceof HTMLElement) {
+      btn.textContent = favorited ? "★" : "☆";
+      btn.setAttribute("aria-pressed", favorited ? "true" : "false");
+      btn.setAttribute(
+        "aria-label",
+        favorited ? "お気に入りを解除" : "お気に入りに追加",
+      );
+    }
+  });
+}
+
+/** サイドバーの「お気に入り (N)」 件数バッジを最新値に書き換える */
+function refreshFavoriteCountBadge() {
+  const countEl = document.querySelector('.dir-link[data-favorite="1"] .dir-count');
+  if (countEl) countEl.textContent = `(${favoritesCount})`;
+}
+
+/** サイドバーの「★ お気に入り」リンク (件数バッジ付き) */
+function makeFavoriteFilterAnchor(count) {
+  const a = document.createElement("a");
+  a.href = "#";
+  a.className = "dir-link favorite-link" + (state.favorited ? " active" : "");
+  a.dataset.dir = "";
+  a.dataset.favorite = "1";
+  a.textContent = "★ お気に入り";
+  const span = document.createElement("span");
+  span.className = "dir-count";
+  span.textContent = `(${count})`;
+  a.appendChild(span);
+  a.addEventListener("click", (e) => {
+    e.preventDefault();
+    // お気に入り行を選ぶと他の絞り込み (root/directory/status/query) は解除
+    state.favorited = true;
+    state.directory = "";
+    state.rootId = "";
+    state.status = "all";
+    state.query = "";
+    if (filterSel) filterSel.value = "all";
+    if (favoritedFilter) favoritedFilter.checked = true;
+    if (searchInput) searchInput.value = "";
+    document.querySelectorAll(".dir-link").forEach((el) => el.classList.remove("active"));
+    a.classList.add("active");
+    writeQuery();
+    loadBooks();
+    loadSections();
+  });
+  return a;
 }
 
 function readQuery() {
@@ -456,7 +703,9 @@ function readQuery() {
   return {
     sort: q.get("sort") ?? "title",
     directory: q.get("directory") ?? "",
+    rootId: q.get("root") ?? "",
     status: q.get("status") ?? "all",
+    favorited: q.get("favorited") === "1",
     query: q.get("q") ?? "",
   };
 }
@@ -464,7 +713,9 @@ function readQuery() {
 function writeQuery() {
   const q = new URLSearchParams();
   if (state.sort !== "title") q.set("sort", state.sort);
+  if (state.rootId !== "") q.set("root", state.rootId);
   if (state.directory !== "") q.set("directory", state.directory);
+  if (state.favorited) q.set("favorited", "1");
   if (state.status && state.status !== "all") q.set("status", state.status);
   if (state.query !== "") q.set("q", state.query);
   const qs = q.toString();

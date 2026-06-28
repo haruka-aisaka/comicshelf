@@ -5,16 +5,24 @@ import type { ReadStatusFilter, SortKey } from "../../src/types.ts";
 import {
   getBookById,
   getComicInfo,
+  getFavorite,
   getReadState,
   listBooks,
   listContinueReading,
   listDirectories,
   listRecentlyAdded,
   listRecentlyFinished,
+  setFavorite,
   upsertReadState,
 } from "../../src/db/repository.ts";
 
-const ALLOWED_SORTS: readonly SortKey[] = ["title", "modified", "added", "unread"];
+const ALLOWED_SORTS: readonly SortKey[] = [
+  "title",
+  "modified",
+  "added",
+  "unread",
+  "favorited",
+];
 const ALLOWED_STATUSES: readonly ReadStatusFilter[] = [
   "all",
   "unread",
@@ -39,16 +47,36 @@ export function buildBooksRoutes(deps: BooksDeps): Hono {
       ? (sortParam as SortKey)
       : "title";
     const statusParam = c.req.query("status");
-    const status =
-      statusParam && (ALLOWED_STATUSES as readonly string[]).includes(statusParam)
-        ? (statusParam as ReadStatusFilter)
-        : "all";
+    const status = statusParam && (ALLOWED_STATUSES as readonly string[]).includes(statusParam)
+      ? (statusParam as ReadStatusFilter)
+      : "all";
     const directory = c.req.query("directory") ?? undefined;
+    const rootId = c.req.query("root") ?? undefined;
+    const favorited = parseBoolFlag(c.req.query("favorited"));
     const query = c.req.query("q") ?? undefined;
     const limit = parseIntOr(c.req.query("limit"), 200);
     const offset = parseIntOr(c.req.query("offset"), 0);
-    const books = listBooks(deps.db, { sort, status, directory, query, limit, offset });
-    return c.json({ books, sort, status, directory, query, limit, offset });
+    const books = listBooks(deps.db, {
+      sort,
+      status,
+      directory,
+      rootId,
+      favorited,
+      query,
+      limit,
+      offset,
+    });
+    return c.json({
+      books,
+      sort,
+      status,
+      directory,
+      rootId,
+      favorited,
+      query,
+      limit,
+      offset,
+    });
   });
 
   app.get("/directories", (c) => {
@@ -71,7 +99,22 @@ export function buildBooksRoutes(deps: BooksDeps): Hono {
     if (!book) return c.json({ error: "not found" }, 404);
     const readState = getReadState(deps.db, id);
     const comicInfo = getComicInfo(deps.db, id);
-    return c.json({ book, readState, comicInfo });
+    const favorite = getFavorite(deps.db, id);
+    return c.json({ book, readState, comicInfo, favorite });
+  });
+
+  app.post("/books/:id/favorite", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    if (!getBookById(deps.db, id)) return c.json({ error: "book not found" }, 404);
+    const body = await c.req.json().catch(() => null) as
+      | { favorited?: unknown }
+      | null;
+    if (!body || typeof body.favorited !== "boolean") {
+      return c.json({ error: "favorited (boolean) required" }, 400);
+    }
+    const state = setFavorite(deps.db, id, body.favorited, now());
+    return c.json({ favorite: state });
   });
 
   app.get("/books/:id/pages", async (c) => {
@@ -147,6 +190,14 @@ export function buildBooksRoutes(deps: BooksDeps): Hono {
   });
 
   return app;
+}
+
+/** `?favorited=1` / `?favorited=true` を boolean に変換。 未指定/その他は undefined。 */
+function parseBoolFlag(value: string | undefined): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (value === "1" || value === "true") return true;
+  if (value === "0" || value === "false") return false;
+  return undefined;
 }
 
 function parseIntOr(value: string | undefined, fallback: number): number {

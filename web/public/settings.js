@@ -25,7 +25,7 @@ const lastRemoved = $("#last-removed");
 const lastElapsed = $("#last-elapsed");
 const nextRun = $("#next-run");
 const warmupProgress = $("#warmup-progress");
-const libraryRoots = $("#library-roots");
+const libraryRootsBody = $("#library-roots-body");
 const watchInterval = $("#watch-interval");
 const defaultDirection = /** @type {HTMLSelectElement} */ ($("#default-direction"));
 
@@ -56,8 +56,9 @@ function openReindexDialog() {
   if (reindexDialogFullSub) {
     const lastMs = lastResultElapsedMs;
     if (lastMs && lastMs > 0) {
-      reindexDialogFullSub.textContent =
-        `全 ZIP を開き直します。 前回は ${formatDuration(lastMs)} かかりました`;
+      reindexDialogFullSub.textContent = `全 ZIP を開き直します。 前回は ${
+        formatDuration(lastMs)
+      } かかりました`;
     } else {
       reindexDialogFullSub.textContent = "全 ZIP を開き直します (初回実行)";
     }
@@ -138,7 +139,29 @@ async function loadConfig() {
   try {
     const res = await fetch("/api/config");
     const data = await res.json();
-    libraryRoots.textContent = (data.library?.roots ?? []).join(", ");
+    /** @type {Array<{id: string, name: string, path: string, bookCount: number}>} */
+    const roots = data.library?.roots ?? [];
+    libraryRootsBody.innerHTML = "";
+    if (roots.length === 0) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td colspan="3" class="muted">設定なし</td>`;
+      libraryRootsBody.appendChild(tr);
+    } else {
+      for (const r of roots) {
+        const tr = document.createElement("tr");
+        const nameTd = document.createElement("td");
+        nameTd.textContent = r.name;
+        const pathTd = document.createElement("td");
+        const code = document.createElement("code");
+        code.textContent = r.path;
+        pathTd.appendChild(code);
+        const countTd = document.createElement("td");
+        countTd.className = "num";
+        countTd.textContent = String(r.bookCount);
+        tr.append(nameTd, pathTd, countTd);
+        libraryRootsBody.appendChild(tr);
+      }
+    }
     watchInterval.textContent = String(data.indexer?.watchInterval ?? "-");
   } catch (e) {
     console.warn("config取得失敗", e);
@@ -169,9 +192,7 @@ function showBanner(info) {
   }
   if (reindexBannerDetail) {
     const denomText = info.totalEstimate > 0 ? ` / 約 ${info.totalEstimate} 件` : "";
-    const changedText = info.upserted !== undefined
-      ? ` ・ 変更 ${info.upserted} 件`
-      : "";
+    const changedText = info.upserted !== undefined ? ` ・ 変更 ${info.upserted} 件` : "";
     let detail =
       `${info.scanned} 件処理済み${denomText}${changedText} ・ ComicInfo ${info.comicInfoImported} 件`;
     if (info.currentFile && !info.done) {

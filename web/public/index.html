@@ -1,92 +1,159 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#0f1115">
-  <title>comicshelf</title>
-  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/icons/icon.svg">
-  <link rel="manifest" href="/manifest.json">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="comicshelf">
-  <link rel="stylesheet" href="/style.css">
-</head>
-<body>
-  <header class="topbar">
-    <button id="menu-toggle" class="menu-toggle" type="button" aria-label="ディレクトリ一覧" aria-expanded="false">☰</button>
-    <h1>comicshelf</h1>
-    <div class="toolbar">
-      <label class="search-label">
-        <span class="sr-label">検索</span>
-        <span class="search-input-wrap">
-          <input id="search" type="search" placeholder="タイトル / ディレクトリ / タグ" autocomplete="off" inputmode="search" enterkeyhint="search">
-          <button id="search-clear" class="search-clear" type="button" aria-label="検索をクリア" hidden>×</button>
-        </span>
-      </label>
-      <label class="sort-label">
-        <span class="sr-label">フィルタ</span>
-        <select id="status-filter">
-          <option value="all">すべて</option>
-          <option value="not_finished">読了前のみ</option>
-          <option value="unread">未着手</option>
-          <option value="reading">読書中</option>
-          <option value="finished">読了</option>
-        </select>
-      </label>
-      <label class="sort-label">
-        <span class="sr-label">ソート</span>
-        <select id="sort">
-          <option value="title">タイトル順</option>
-          <option value="modified">更新日時 (新しい順)</option>
-          <option value="added">追加日時 (新しい順)</option>
-          <option value="unread">未読優先</option>
-        </select>
-      </label>
-      <a href="/settings.html" class="icon-btn" aria-label="設定" title="設定">⚙</a>
-      <span id="status" class="status"></span>
-    </div>
-  </header>
-
-  <main class="main">
-    <aside class="sidebar" id="sidebar">
-      <h2>ディレクトリ</h2>
-      <ul id="directories" class="dir-list">
-        <li><a href="#" data-dir="" class="dir-link active">すべて</a></li>
-      </ul>
-    </aside>
-    <div id="sidebar-scrim" class="sidebar-scrim" aria-hidden="true"></div>
-
-    <section class="content">
-      <div id="sections" class="sections" hidden>
-        <section class="section" data-section="continueReading" hidden>
-          <h2 class="section-title">続きから</h2>
-          <div class="section-row"></div>
-        </section>
-        <section class="section" data-section="recentlyAdded" hidden>
-          <h2 class="section-title">最近追加した</h2>
-          <div class="section-row"></div>
-        </section>
-        <section class="section" data-section="recentlyFinished" hidden>
-          <h2 class="section-title">最近読んだ</h2>
-          <div class="section-row"></div>
-        </section>
+  <head>
+    <meta charset="utf-8">
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    >
+    <meta name="theme-color" content="#0f1115">
+    <title>comicshelf</title>
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/icons/icon.svg">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="comicshelf">
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <button
+        id="menu-toggle"
+        class="menu-toggle"
+        type="button"
+        aria-label="ディレクトリ一覧"
+        aria-expanded="false"
+      >
+        ☰
+      </button>
+      <h1>comicshelf</h1>
+      <div class="toolbar">
+        <label class="search-label">
+          <span class="sr-label">検索</span>
+          <span class="search-input-wrap">
+            <input
+              id="search"
+              type="search"
+              placeholder="タイトル / ディレクトリ / タグ"
+              autocomplete="off"
+              inputmode="search"
+              enterkeyhint="search"
+            >
+            <button
+              id="search-clear"
+              class="search-clear"
+              type="button"
+              aria-label="検索をクリア"
+              hidden
+            >
+              ×
+            </button>
+          </span>
+        </label>
+        <label class="sort-label">
+          <span class="sr-label">フィルタ</span>
+          <select id="status-filter">
+            <option value="all">すべて</option>
+            <option value="not_finished">読了前のみ</option>
+            <option value="unread">未着手</option>
+            <option value="reading">読書中</option>
+            <option value="finished">読了</option>
+          </select>
+        </label>
+        <label class="sort-label">
+          <span class="sr-label">ソート</span>
+          <select id="sort">
+            <option value="title">タイトル順</option>
+            <option value="modified">更新日時 (新しい順)</option>
+            <option value="added">追加日時 (新しい順)</option>
+            <option value="unread">未読優先</option>
+            <option value="favorited">お気に入り優先</option>
+          </select>
+        </label>
+        <label class="favorite-toggle" title="お気に入りのみ表示">
+          <input id="favorited-filter" type="checkbox">
+          <span class="favorite-toggle-icon" aria-hidden="true">★</span>
+          <span class="sr-label">お気に入りのみ</span>
+        </label>
+        <a href="/settings.html" class="icon-btn" aria-label="設定" title="設定">⚙</a>
+        <span id="status" class="status"></span>
       </div>
-      <div id="grid" class="grid"></div>
-      <div id="empty" class="empty-state" hidden>
-        <svg class="empty-icon" viewBox="0 0 64 64" width="64" height="64" aria-hidden="true">
-          <rect x="10" y="8" width="44" height="48" rx="3" fill="none" stroke="currentColor" stroke-width="2"/>
-          <line x1="20" y1="20" x2="44" y2="20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          <line x1="20" y1="30" x2="44" y2="30" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          <line x1="20" y1="40" x2="36" y2="40" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-        <p id="empty-text" class="empty-text"></p>
-        <button id="clear-filters" class="empty-action" type="button" hidden>条件をクリア</button>
-      </div>
-    </section>
-  </main>
+    </header>
 
-  <script type="module" src="/app.js"></script>
-</body>
+    <main class="main">
+      <aside class="sidebar" id="sidebar">
+        <h2>ディレクトリ</h2>
+        <ul id="directories" class="dir-list">
+          <li><a href="#" data-dir="" class="dir-link active">すべて</a></li>
+        </ul>
+      </aside>
+      <div id="sidebar-scrim" class="sidebar-scrim" aria-hidden="true"></div>
+
+      <section class="content">
+        <div id="sections" class="sections" hidden>
+          <section class="section" data-section="continueReading" hidden>
+            <h2 class="section-title">続きから</h2>
+            <div class="section-row"></div>
+          </section>
+          <section class="section" data-section="recentlyAdded" hidden>
+            <h2 class="section-title">最近追加した</h2>
+            <div class="section-row"></div>
+          </section>
+          <section class="section" data-section="recentlyFinished" hidden>
+            <h2 class="section-title">最近読んだ</h2>
+            <div class="section-row"></div>
+          </section>
+        </div>
+        <div id="grid" class="grid"></div>
+        <div id="empty" class="empty-state" hidden>
+          <svg class="empty-icon" viewBox="0 0 64 64" width="64" height="64" aria-hidden="true">
+            <rect
+              x="10"
+              y="8"
+              width="44"
+              height="48"
+              rx="3"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            />
+            <line
+              x1="20"
+              y1="20"
+              x2="44"
+              y2="20"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+            <line
+              x1="20"
+              y1="30"
+              x2="44"
+              y2="30"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+            <line
+              x1="20"
+              y1="40"
+              x2="36"
+              y2="40"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+          </svg>
+          <p id="empty-text" class="empty-text"></p>
+          <button id="clear-filters" class="empty-action" type="button" hidden>
+            条件をクリア
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
 </html>

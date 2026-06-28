@@ -20,11 +20,7 @@
  *  初回レイテンシをページ送りに分散させる戦略。)
  */
 import { extname, join } from "@std/path";
-import {
-  BlobWriter,
-  type Entry,
-  ZipReader,
-} from "@zip-js/zip-js";
+import { BlobWriter, type Entry, ZipReader } from "@zip-js/zip-js";
 import { FileSliceReader } from "./file_reader.ts";
 
 export interface PageCacheOptions {

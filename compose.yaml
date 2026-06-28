@@ -21,6 +21,9 @@ services:
     volumes:
       # 漫画ライブラリ (読み取り専用)
       - "${COMICS_DIR:?COMICS_DIR must be set in .env}:/comics:ro"
+      # Pixiv ライブラリ (読み取り専用)。 不要なら .env から PIXIV_DIR を消し、
+      # この行と config.json の roots[pixiv] エントリを併せて削除する。
+      - "${PIXIV_DIR:?PIXIV_DIR must be set in .env}:/pixiv:ro"
       # SQLite等の永続データ
       - ./data:/data
       # 設定ファイル

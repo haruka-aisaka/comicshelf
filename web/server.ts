@@ -3,6 +3,7 @@ import { loadConfig } from "../src/config.ts";
 import { openDatabase } from "../src/db/schema.ts";
 import { LibraryService } from "../src/library.ts";
 import { IndexerService } from "../src/indexer/service.ts";
+import { countBooksByRoot, countFavorites } from "../src/db/repository.ts";
 import { buildBooksRoutes } from "./routes/books.ts";
 import { buildIndexAdminRoutes } from "./routes/index_admin.ts";
 
@@ -12,18 +13,34 @@ export function buildApp(opts: {
   dbPath?: string;
 }): { app: Hono; indexer: IndexerService; close: () => void } {
   const config = opts.config;
-  const db = openDatabase(opts.dbPath ?? config.database.path);
+  const db = openDatabase(
+    opts.dbPath ?? config.database.path,
+    config.library.roots[0]?.id,
+  );
+  // orphan 警告: DB に居るが config.json に存在しない root_id があれば気付けるようにする
+  warnOrphanRoots(db, config.library.roots.map((r) => r.id));
   const library = new LibraryService(db, config);
   const indexer = new IndexerService(db, config, library);
   const app = new Hono();
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));
-  app.get("/api/config", (c) =>
-    c.json({
-      library: { roots: config.library.roots, extensions: config.library.extensions },
+  app.get("/api/config", (c) => {
+    const counts = countBooksByRoot(db);
+    return c.json({
+      library: {
+        roots: config.library.roots.map((r) => ({
+          id: r.id,
+          name: r.name,
+          path: r.path,
+          bookCount: counts.get(r.id) ?? 0,
+        })),
+        extensions: config.library.extensions,
+        favoritesCount: countFavorites(db),
+      },
       server: { port: config.server.port },
       indexer: { watchInterval: config.indexer.watchInterval },
-    }));
+    });
+  });
 
   app.route("/api", buildBooksRoutes({ db, library }));
   app.route("/api", buildIndexAdminRoutes({ indexer }));
@@ -60,6 +77,18 @@ export function buildApp(opts: {
       db.close();
     },
   };
+}
+
+function warnOrphanRoots(db: ReturnType<typeof openDatabase>, knownIds: string[]): void {
+  const counts = countBooksByRoot(db);
+  const known = new Set(knownIds);
+  for (const [rootId, count] of counts) {
+    if (!known.has(rootId)) {
+      console.warn(
+        `[config] root_id "${rootId}" は config.json に存在しません。 該当する ${count} 件は一覧から非表示になります。`,
+      );
+    }
+  }
 }
 
 function guessMime(path: string): string {

@@ -1,6 +1,8 @@
 {
   "library": {
-    "roots": ["/comics"],
+    "roots": [
+      { "id": "comics", "name": "Comics", "path": "/comics" }
+    ],
     "extensions": [".cbz", ".zip"]
   },
   "server": {

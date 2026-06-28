@@ -1,92 +1,129 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#0f1115">
-  <title>comicshelf - 設定</title>
-  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/icons/icon.svg">
-  <link rel="manifest" href="/manifest.json">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/style.css">
-</head>
-<body>
-  <header class="topbar">
-    <a href="/" class="back" aria-label="一覧に戻る">←</a>
-    <h1>設定</h1>
-  </header>
+  <head>
+    <meta charset="utf-8">
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    >
+    <meta name="theme-color" content="#0f1115">
+    <title>comicshelf - 設定</title>
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/icons/icon.svg">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <a href="/" class="back" aria-label="一覧に戻る">←</a>
+      <h1>設定</h1>
+    </header>
 
-  <main class="settings">
-    <section class="settings-card">
-      <h2>ライブラリ</h2>
-      <p class="settings-desc">
-        ライブラリディレクトリは <code id="library-roots">読み込み中…</code> です。
-        起動時と <code id="watch-interval">-</code>秒ごとに自動でインデックスが更新されます。
-      </p>
-      <div id="reindex-banner" class="reindex-banner" hidden>
-        <div class="reindex-banner-header">
-          <span class="reindex-banner-spinner" aria-hidden="true"></span>
-          <span class="reindex-banner-title">インデックス中</span>
-          <span id="reindex-banner-elapsed" class="reindex-banner-elapsed">0 秒</span>
-        </div>
-        <div class="reindex-banner-progress">
-          <div id="reindex-banner-bar" class="reindex-banner-bar"></div>
-        </div>
-        <div id="reindex-banner-detail" class="reindex-banner-detail">準備中…</div>
-      </div>
-      <dl class="settings-meta">
-        <dt>最終実行</dt><dd id="last-run">—</dd>
-        <dt>追加/更新</dt><dd id="last-upserted">—</dd>
-        <dt>削除</dt><dd id="last-removed">—</dd>
-        <dt>所要時間</dt><dd id="last-elapsed">—</dd>
-        <dt>次回自動実行</dt><dd id="next-run">—</dd>
-        <dt>サムネ生成</dt><dd id="warmup-progress">—</dd>
-      </dl>
-      <div class="settings-actions">
-        <button id="reindex" type="button">今すぐ再インデックス</button>
-        <span id="reindex-status" class="status"></span>
-      </div>
-    </section>
-
-    <!-- 再インデックス確認ダイアログ (modal) -->
-    <div id="reindex-dialog" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="reindex-dialog-title">
-      <div class="modal-backdrop" data-action="cancel"></div>
-      <div class="modal-panel">
-        <h2 id="reindex-dialog-title" class="modal-title">インデックス方法を選んでください</h2>
-        <p class="modal-desc">
-          ライブラリの書籍について、 変更があったファイルだけを処理するか、 全件を処理するかを選べます。
+    <main class="settings">
+      <section class="settings-card">
+        <h2>ライブラリ</h2>
+        <p class="settings-desc">
+          設定されているライブラリの一覧です。 起動時と <code
+            id="watch-interval"
+          >-</code>秒ごとに自動でインデックスが更新されます。
+          追加・削除・編集は <code>config.json</code> を直接編集してください。
         </p>
-        <div class="modal-actions">
-          <button type="button" class="modal-btn modal-btn-primary" data-action="incremental">
-            <span class="modal-btn-title">差分インデックス (推奨)</span>
-            <span class="modal-btn-sub">前回から変わっていない本はスキップ。 数秒で完了します</span>
-          </button>
-          <button type="button" class="modal-btn" data-action="full">
-            <span class="modal-btn-title">全件再インデックス</span>
-            <span class="modal-btn-sub" id="reindex-dialog-full-sub">全 ZIP を開き直します</span>
-          </button>
-          <button type="button" class="modal-btn modal-btn-cancel" data-action="cancel">
-            キャンセル
-          </button>
+        <table class="library-roots-table">
+          <thead>
+            <tr>
+              <th>名前</th>
+              <th>パス</th>
+              <th class="num">書籍数</th>
+            </tr>
+          </thead>
+          <tbody id="library-roots-body">
+            <tr><td colspan="3" class="muted">読み込み中…</td></tr>
+          </tbody>
+        </table>
+        <div id="reindex-banner" class="reindex-banner" hidden>
+          <div class="reindex-banner-header">
+            <span class="reindex-banner-spinner" aria-hidden="true"></span>
+            <span class="reindex-banner-title">インデックス中</span>
+            <span id="reindex-banner-elapsed" class="reindex-banner-elapsed">0 秒</span>
+          </div>
+          <div class="reindex-banner-progress">
+            <div id="reindex-banner-bar" class="reindex-banner-bar"></div>
+          </div>
+          <div id="reindex-banner-detail" class="reindex-banner-detail">準備中…</div>
+        </div>
+        <dl class="settings-meta">
+          <dt>最終実行</dt>
+          <dd id="last-run">—</dd>
+          <dt>追加/更新</dt>
+          <dd id="last-upserted">—</dd>
+          <dt>削除</dt>
+          <dd id="last-removed">—</dd>
+          <dt>所要時間</dt>
+          <dd id="last-elapsed">—</dd>
+          <dt>次回自動実行</dt>
+          <dd id="next-run">—</dd>
+          <dt>サムネ生成</dt>
+          <dd id="warmup-progress">—</dd>
+        </dl>
+        <div class="settings-actions">
+          <button id="reindex" type="button">今すぐ再インデックス</button>
+          <span id="reindex-status" class="status"></span>
+        </div>
+      </section>
+
+      <!-- 再インデックス確認ダイアログ (modal) -->
+      <div
+        id="reindex-dialog"
+        class="modal"
+        hidden
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reindex-dialog-title"
+      >
+        <div class="modal-backdrop" data-action="cancel"></div>
+        <div class="modal-panel">
+          <h2 id="reindex-dialog-title" class="modal-title">
+            インデックス方法を選んでください
+          </h2>
+          <p class="modal-desc">
+            ライブラリの書籍について、
+            変更があったファイルだけを処理するか、
+            全件を処理するかを選べます。
+          </p>
+          <div class="modal-actions">
+            <button type="button" class="modal-btn modal-btn-primary" data-action="incremental">
+              <span class="modal-btn-title">差分インデックス (推奨)</span>
+              <span class="modal-btn-sub"
+              >前回から変わっていない本はスキップ。
+                数秒で完了します</span>
+            </button>
+            <button type="button" class="modal-btn" data-action="full">
+              <span class="modal-btn-title">全件再インデックス</span>
+              <span class="modal-btn-sub" id="reindex-dialog-full-sub"
+              >全 ZIP を開き直します</span>
+            </button>
+            <button type="button" class="modal-btn modal-btn-cancel" data-action="cancel">
+              キャンセル
+            </button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <section class="settings-card">
-      <h2>ビューワー (デフォルト設定)</h2>
-      <p class="settings-desc">これらの設定はブラウザに保存されます。</p>
-      <label class="settings-row">
-        <span>読書方向</span>
-        <select id="default-direction">
-          <option value="rtl">右→左 (漫画)</option>
-          <option value="ltr">左→右</option>
-        </select>
-      </label>
-    </section>
-  </main>
+      <section class="settings-card">
+        <h2>ビューワー (デフォルト設定)</h2>
+        <p class="settings-desc">これらの設定はブラウザに保存されます。</p>
+        <label class="settings-row">
+          <span>読書方向</span>
+          <select id="default-direction">
+            <option value="rtl">右→左 (漫画)</option>
+            <option value="ltr">左→右</option>
+          </select>
+        </label>
+      </section>
+    </main>
 
-  <script type="module" src="/settings.js"></script>
-</body>
+    <script type="module" src="/settings.js"></script>
+  </body>
 </html>

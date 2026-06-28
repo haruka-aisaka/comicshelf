@@ -5,6 +5,8 @@
 /** 書籍 (1ファイル = 1巻) を表すレコード */
 export interface Book {
   id: number;
+  /** どのライブラリルートに属するか (LibraryRoot.id) */
+  rootId: string;
   /** ライブラリルートからの相対パス */
   path: string;
   /** ファイル名 (拡張子付き) */
@@ -34,10 +36,25 @@ export interface ReadState {
   updatedAt: number;
 }
 
-/** 設定ファイルのスキーマ */
+/**
+ * ライブラリルートの定義。
+ *   - id:   内部識別子 (英数 / `_` / `-`)。 DB の root_id に保存され、 一度決めたら不変前提。
+ *   - name: UI 表示用ラベル
+ *   - path: ファイルシステム上の絶対パス
+ */
+export interface LibraryRoot {
+  id: string;
+  name: string;
+  path: string;
+}
+
+/**
+ * 設定ファイルのスキーマ (正規化後)。
+ * `library.roots` は LibraryRoot[]。 旧形式の `string[]` は loadConfig が正規化する。
+ */
 export interface Config {
   library: {
-    roots: string[];
+    roots: LibraryRoot[];
     extensions: string[];
   };
   server: {
@@ -52,8 +69,11 @@ export interface Config {
   };
 }
 
+/** 設定ファイル上の生の roots エントリ (string または LibraryRoot) */
+export type RawRoot = string | { id?: string; name?: string; path: string };
+
 /** ソート種別 */
-export type SortKey = "title" | "modified" | "added" | "unread";
+export type SortKey = "title" | "modified" | "added" | "unread" | "favorited";
 
 /** 読書状態フィルタ */
 export type ReadStatusFilter =

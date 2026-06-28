@@ -5,6 +5,7 @@ import type { ComicInfo } from "../comicinfo/parser.ts";
 /** DBから取得した生の書籍行 (snake_case) */
 interface BookRow {
   id: number;
+  root_id: string;
   path: string;
   filename: string;
   title: string;
@@ -18,6 +19,7 @@ interface BookRow {
 function rowToBook(r: BookRow): Book {
   return {
     id: r.id,
+    rootId: r.root_id,
     path: r.path,
     filename: r.filename,
     title: r.title,
@@ -33,15 +35,15 @@ function rowToBook(r: BookRow): Book {
 export type BookUpsertInput = Omit<Book, "id" | "addedAt">;
 
 /**
- * pathをキーに書籍をUpsert。
+ * (rootId, path) をキーに書籍をUpsert。
  *   - 新規: addedAt = now
  *   - 既存: addedAtは保持。modified_at等のメタ情報のみ更新
  */
 export function upsertBook(db: Database, input: BookUpsertInput, now: number): Book {
   const stmt = db.prepare(`
-    INSERT INTO books (path, filename, title, directory, size_bytes, modified_at, added_at, page_count)
-    VALUES (:path, :filename, :title, :directory, :size_bytes, :modified_at, :added_at, :page_count)
-    ON CONFLICT(path) DO UPDATE SET
+    INSERT INTO books (root_id, path, filename, title, directory, size_bytes, modified_at, added_at, page_count)
+    VALUES (:root_id, :path, :filename, :title, :directory, :size_bytes, :modified_at, :added_at, :page_count)
+    ON CONFLICT(root_id, path) DO UPDATE SET
       filename = excluded.filename,
       title = excluded.title,
       directory = excluded.directory,
@@ -50,6 +52,7 @@ export function upsertBook(db: Database, input: BookUpsertInput, now: number): B
       page_count = COALESCE(excluded.page_count, books.page_count)
   `);
   stmt.run({
+    root_id: input.rootId,
     path: input.path,
     filename: input.filename,
     title: input.title,
@@ -60,9 +63,11 @@ export function upsertBook(db: Database, input: BookUpsertInput, now: number): B
     page_count: input.pageCount,
   });
   const row = db
-    .prepare("SELECT * FROM books WHERE path = ?")
-    .get<BookRow>(input.path);
-  if (!row) throw new Error(`Failed to upsert book at path ${input.path}`);
+    .prepare("SELECT * FROM books WHERE root_id = ? AND path = ?")
+    .get<BookRow>(input.rootId, input.path);
+  if (!row) {
+    throw new Error(`Failed to upsert book at ${input.rootId}:${input.path}`);
+  }
   return rowToBook(row);
 }
 
@@ -71,9 +76,11 @@ export function updatePageCount(db: Database, bookId: number, pageCount: number)
   db.prepare("UPDATE books SET page_count = ? WHERE id = ?").run(pageCount, bookId);
 }
 
-/** path指定削除 (インデクサーがファイル消失を検出した時に使用) */
-export function deleteBookByPath(db: Database, path: string): boolean {
-  const changes = db.prepare("DELETE FROM books WHERE path = ?").run(path);
+/** (rootId, path) 指定削除 (インデクサーがファイル消失を検出した時に使用) */
+export function deleteBookByPath(db: Database, rootId: string, path: string): boolean {
+  const changes = db
+    .prepare("DELETE FROM books WHERE root_id = ? AND path = ?")
+    .run(rootId, path);
   return changes > 0;
 }
 
@@ -83,15 +90,32 @@ export function getBookById(db: Database, id: number): Book | null {
   return row ? rowToBook(row) : null;
 }
 
-/** path検索 (差分インデックスで既存と比較するため) */
-export function getBookByPath(db: Database, path: string): Book | null {
-  const row = db.prepare("SELECT * FROM books WHERE path = ?").get<BookRow>(path);
+/** (rootId, path) 検索 (差分インデックスで既存と比較するため) */
+export function getBookByPath(db: Database, rootId: string, path: string): Book | null {
+  const row = db
+    .prepare("SELECT * FROM books WHERE root_id = ? AND path = ?")
+    .get<BookRow>(rootId, path);
   return row ? rowToBook(row) : null;
 }
 
-/** 全パス取得 (インデクサーの差分計算用) */
-export function listAllBookPaths(db: Database): string[] {
-  return db.prepare("SELECT path FROM books").all<{ path: string }>().map((r) => r.path);
+/** 指定 root に属する全 (rootId, path) を取得 (インデクサーの差分計算用) */
+export function listBookKeysByRoot(
+  db: Database,
+  rootId: string,
+): Array<{ path: string }> {
+  return db
+    .prepare("SELECT path FROM books WHERE root_id = ?")
+    .all<{ path: string }>(rootId);
+}
+
+/** root_id ごとの書籍件数 (設定画面の表示用) */
+export function countBooksByRoot(db: Database): Map<string, number> {
+  const rows = db
+    .prepare("SELECT root_id, COUNT(*) AS c FROM books GROUP BY root_id")
+    .all<{ root_id: string; c: number }>();
+  const map = new Map<string, number>();
+  for (const r of rows) map.set(r.root_id, r.c);
+  return map;
 }
 
 /** 全ID取得 (サムネwarmup用) */
@@ -101,9 +125,13 @@ export function listAllBookIds(db: Database): number[] {
 
 /** 一覧取得オプション */
 export interface ListBooksOptions {
+  /** 特定の root に絞り込む */
+  rootId?: string;
   directory?: string;
   sort?: SortKey;
   status?: ReadStatusFilter;
+  /** true: お気に入りのみ / false or undefined: 絞り込みなし */
+  favorited?: boolean;
   /** タイトル/ディレクトリの部分一致検索 (大文字小文字無視) */
   query?: string;
   limit?: number;
@@ -124,6 +152,7 @@ export interface ComicInfoSummary {
 export interface BookWithReadState extends Book {
   readState: ReadState | null;
   comicInfo: ComicInfoSummary | null;
+  favorited: boolean;
 }
 
 interface BookRowWithRead extends BookRow {
@@ -136,7 +165,31 @@ interface BookRowWithRead extends BookRow {
   ci_penciller: string | null;
   ci_tags: string | null;
   ci_manga: string | null;
+  fav_created_at: number | null;
 }
+
+/**
+ * 一覧系 SQL で共通利用する SELECT 句 + JOIN。
+ * read_states / comic_info / favorites を LEFT JOIN し、 rowToBookWithRead が
+ * 期待する全カラムを生成する。
+ */
+const BOOK_SELECT_WITH_JOINS = `
+  SELECT b.*,
+    r.last_page    AS rs_last_page,
+    r.finished     AS rs_finished,
+    r.updated_at   AS rs_updated_at,
+    ci.title       AS ci_title,
+    ci.series      AS ci_series,
+    ci.writer      AS ci_writer,
+    ci.penciller   AS ci_penciller,
+    ci.tags        AS ci_tags,
+    ci.manga       AS ci_manga,
+    f.created_at   AS fav_created_at
+  FROM books b
+  LEFT JOIN read_states r ON r.book_id = b.id
+  LEFT JOIN comic_info  ci ON ci.book_id = b.id
+  LEFT JOIN favorites   f  ON f.book_id  = b.id
+`;
 
 function rowToBookWithRead(r: BookRowWithRead): BookWithReadState {
   const book = rowToBook(r);
@@ -157,7 +210,7 @@ function rowToBookWithRead(r: BookRowWithRead): BookWithReadState {
   }
   if (r.ci_manga !== null) ci.manga = r.ci_manga as ComicInfoSummary["manga"];
   const comicInfo = Object.keys(ci).length > 0 ? ci : null;
-  return { ...book, readState, comicInfo };
+  return { ...book, readState, comicInfo, favorited: r.fav_created_at !== null };
 }
 
 export function listBooks(db: Database, opts: ListBooksOptions = {}): BookWithReadState[] {
@@ -167,24 +220,17 @@ export function listBooks(db: Database, opts: ListBooksOptions = {}): BookWithRe
   const limit = opts.limit ?? -1;
   const offset = opts.offset ?? 0;
 
-  const selectClause = `
-    SELECT b.*,
-      r.last_page  AS rs_last_page,
-      r.finished   AS rs_finished,
-      r.updated_at AS rs_updated_at,
-      ci.title     AS ci_title,
-      ci.series    AS ci_series,
-      ci.writer    AS ci_writer,
-      ci.penciller AS ci_penciller,
-      ci.tags      AS ci_tags,
-      ci.manga     AS ci_manga
-    FROM books b
-    LEFT JOIN read_states r ON r.book_id = b.id
-    LEFT JOIN comic_info ci ON ci.book_id = b.id
-  `;
+  const selectClause = BOOK_SELECT_WITH_JOINS;
 
   const whereParts: string[] = [];
   const params: (string | number)[] = [];
+  if (opts.rootId !== undefined) {
+    whereParts.push("b.root_id = ?");
+    params.push(opts.rootId);
+  }
+  if (opts.favorited) {
+    whereParts.push("f.book_id IS NOT NULL");
+  }
   if (opts.directory !== undefined) {
     // 完全一致または prefix 一致 ("by-author" を指定すれば "by-author/foo" も含む)
     // 空文字 ("") はルート直下のみマッチ (LIKE "/%" は無意味なので completely-empty を排除)
@@ -262,6 +308,9 @@ function sortKeyToOrderBy(key: SortKey): string {
     case "unread":
       // 未読 (read_stateなし or finished=0) を優先、その後タイトル順
       return "COALESCE(r.finished, 0) ASC, b.title COLLATE NOCASE ASC";
+    case "favorited":
+      // お気に入り (favorites あり) を優先、その後タイトル順
+      return "(f.book_id IS NULL) ASC, b.title COLLATE NOCASE ASC";
   }
 }
 
@@ -269,24 +318,10 @@ function sortKeyToOrderBy(key: SortKey): string {
  * 「続きから」: 読書中 (lastPage > 0, finished = 0) を read_states.updated_at DESC で。
  */
 export function listContinueReading(db: Database, limit: number): BookWithReadState[] {
-  const sql = `
-    SELECT b.*,
-      r.last_page  AS rs_last_page,
-      r.finished   AS rs_finished,
-      r.updated_at AS rs_updated_at,
-      ci.title     AS ci_title,
-      ci.series    AS ci_series,
-      ci.writer    AS ci_writer,
-      ci.penciller AS ci_penciller,
-      ci.tags      AS ci_tags,
-      ci.manga     AS ci_manga
-    FROM books b
-    INNER JOIN read_states r ON r.book_id = b.id
-    LEFT JOIN comic_info ci ON ci.book_id = b.id
-    WHERE r.last_page > 0 AND r.finished = 0
+  const sql = `${BOOK_SELECT_WITH_JOINS}
+    WHERE r.book_id IS NOT NULL AND r.last_page > 0 AND r.finished = 0
     ORDER BY r.updated_at DESC
-    LIMIT ?
-  `;
+    LIMIT ?`;
   return db.prepare(sql).all<BookRowWithRead>(limit).map(rowToBookWithRead);
 }
 
@@ -294,24 +329,10 @@ export function listContinueReading(db: Database, limit: number): BookWithReadSt
  * 「最近読んだ」: 読了済み (finished = 1) を read_states.updated_at DESC で。
  */
 export function listRecentlyFinished(db: Database, limit: number): BookWithReadState[] {
-  const sql = `
-    SELECT b.*,
-      r.last_page  AS rs_last_page,
-      r.finished   AS rs_finished,
-      r.updated_at AS rs_updated_at,
-      ci.title     AS ci_title,
-      ci.series    AS ci_series,
-      ci.writer    AS ci_writer,
-      ci.penciller AS ci_penciller,
-      ci.tags      AS ci_tags,
-      ci.manga     AS ci_manga
-    FROM books b
-    INNER JOIN read_states r ON r.book_id = b.id
-    LEFT JOIN comic_info ci ON ci.book_id = b.id
+  const sql = `${BOOK_SELECT_WITH_JOINS}
     WHERE r.finished = 1
     ORDER BY r.updated_at DESC
-    LIMIT ?
-  `;
+    LIMIT ?`;
   return db.prepare(sql).all<BookRowWithRead>(limit).map(rowToBookWithRead);
 }
 
@@ -319,39 +340,83 @@ export function listRecentlyFinished(db: Database, limit: number): BookWithReadS
  * 「最近追加した」: books.added_at DESC。 read_state がない場合も含む。
  */
 export function listRecentlyAdded(db: Database, limit: number): BookWithReadState[] {
-  const sql = `
-    SELECT b.*,
-      r.last_page  AS rs_last_page,
-      r.finished   AS rs_finished,
-      r.updated_at AS rs_updated_at,
-      ci.title     AS ci_title,
-      ci.series    AS ci_series,
-      ci.writer    AS ci_writer,
-      ci.penciller AS ci_penciller,
-      ci.tags      AS ci_tags,
-      ci.manga     AS ci_manga
-    FROM books b
-    LEFT JOIN read_states r ON r.book_id = b.id
-    LEFT JOIN comic_info ci ON ci.book_id = b.id
+  const sql = `${BOOK_SELECT_WITH_JOINS}
     ORDER BY b.added_at DESC
-    LIMIT ?
-  `;
+    LIMIT ?`;
   return db.prepare(sql).all<BookRowWithRead>(limit).map(rowToBookWithRead);
 }
 
-/** 全ディレクトリの一覧 (重複排除済み, 書籍件数つき) */
+/**
+ * 「お気に入り」: favorites.created_at DESC で並べる。 セクション表示や
+ * カルーセル用。 0 件のとき空配列を返す。
+ */
+export function listRecentlyFavorited(db: Database, limit: number): BookWithReadState[] {
+  const sql = `${BOOK_SELECT_WITH_JOINS}
+    WHERE f.book_id IS NOT NULL
+    ORDER BY f.created_at DESC
+    LIMIT ?`;
+  return db.prepare(sql).all<BookRowWithRead>(limit).map(rowToBookWithRead);
+}
+
+/** 全ディレクトリの一覧 (root_id 単位で重複排除、 書籍件数つき) */
 export interface DirectorySummary {
+  rootId: string;
   directory: string;
   bookCount: number;
 }
 
 export function listDirectories(db: Database): DirectorySummary[] {
   return db.prepare(`
-    SELECT directory, COUNT(*) AS bookCount
+    SELECT root_id AS rootId, directory, COUNT(*) AS bookCount
     FROM books
-    GROUP BY directory
-    ORDER BY directory COLLATE NOCASE ASC
+    GROUP BY root_id, directory
+    ORDER BY root_id COLLATE NOCASE ASC, directory COLLATE NOCASE ASC
   `).all<DirectorySummary>();
+}
+
+/** お気に入り状態 (UI 反映用)。 favorited=false なら createdAt は null。 */
+export interface FavoriteState {
+  bookId: number;
+  favorited: boolean;
+  createdAt: number | null;
+}
+
+/** お気に入り状態を取得 (なければ favorited=false を返す) */
+export function getFavorite(db: Database, bookId: number): FavoriteState {
+  const row = db
+    .prepare("SELECT created_at FROM favorites WHERE book_id = ?")
+    .get<{ created_at: number }>(bookId);
+  return row
+    ? { bookId, favorited: true, createdAt: row.created_at }
+    : { bookId, favorited: false, createdAt: null };
+}
+
+/**
+ * お気に入りトグル (idempotent)。
+ *   - favorited=true: INSERT OR IGNORE。 既存なら created_at は触らない (最初に
+ *     付けた時刻を維持 → セクションの並び順がブレない)
+ *   - favorited=false: DELETE
+ */
+export function setFavorite(
+  db: Database,
+  bookId: number,
+  favorited: boolean,
+  now: number,
+): FavoriteState {
+  if (favorited) {
+    db.prepare(
+      "INSERT INTO favorites (book_id, created_at) VALUES (?, ?) ON CONFLICT(book_id) DO NOTHING",
+    ).run(bookId, now);
+  } else {
+    db.prepare("DELETE FROM favorites WHERE book_id = ?").run(bookId);
+  }
+  return getFavorite(db, bookId);
+}
+
+/** お気に入り総件数 (サイドバー / `/api/config` で利用) */
+export function countFavorites(db: Database): number {
+  const row = db.prepare("SELECT COUNT(*) AS c FROM favorites").get<{ c: number }>();
+  return row?.c ?? 0;
 }
 
 /** 読書状態の取得 (なければnull) */

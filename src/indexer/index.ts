@@ -5,12 +5,13 @@ import {
   deleteBookByPath,
   deleteComicInfo,
   getBookByPath,
-  listAllBookPaths,
+  listBookKeysByRoot,
   upsertBook,
   upsertComicInfo,
 } from "../db/repository.ts";
 import { readComicInfoXml } from "../reader/archive.ts";
 import { parseComicInfo } from "../comicinfo/parser.ts";
+import type { LibraryRoot } from "../types.ts";
 
 export interface IndexStats {
   /** 検出したファイル総数 (skip 含む) */
@@ -23,15 +24,15 @@ export interface IndexStats {
   removed: number;
   /** ComicInfo.xml を取り込めた件数 */
   comicInfoImported: number;
-  /** スキャンに失敗したルート (権限エラー等) */
+  /** スキャンに失敗したルート (権限エラー等)。 LibraryRoot.id を格納する */
   failedRoots: string[];
 }
 
 export type IndexMode = "incremental" | "full";
 
 export interface IndexOptions extends ScanOptions {
-  /** スキャン対象のルート絶対パス一覧 */
-  roots: string[];
+  /** スキャン対象のルート定義一覧 */
+  roots: LibraryRoot[];
   /** 現在時刻 (テスト用に注入可能) */
   now?: () => number;
   /** インデックスモード。 incremental (デフォルト) は path+size+mtime 一致で skip。 */
@@ -48,14 +49,13 @@ export interface IndexOptions extends ScanOptions {
  * 全ルートを走査し、DBへ差分反映する。
  *
  * 動作:
- *   1. 各ルートをスキャンしてファイル一覧を取得
- *   2. upsertBookで反映 (相対パスにはルート識別子を含めない設計のため、
- *      複数ルートで同じ相対パスを持つファイルは後勝ち)
- *   3. 今回検出されなかったpathをDBから削除
+ *   1. 各ルート (LibraryRoot) を順にスキャン
+ *   2. upsertBook を (root_id, 相対パス) のキーで反映
+ *   3. 今回検出されなかった (root_id, path) を root ごとに DB から削除
  *
- * 注意: 相対パスをキーにしているため、複数のルートを設定する場合は
- *       配下の相対パスが衝突しないようユーザーが管理する。
- *       (将来 root_id を導入する余地あり)
+ * 同じ相対パスが異なる root にあっても (root_id, path) が一意なので
+ * 上書きは発生しない。 config.json に書かれていない root_id を持つ
+ * 既存レコード (= ユーザーが root を削除した場合) はここでは触らない。
  */
 export async function reindex(db: Database, opts: IndexOptions): Promise<IndexStats> {
   const now = opts.now ?? (() => Math.floor(Date.now() / 1000));
@@ -69,25 +69,29 @@ export async function reindex(db: Database, opts: IndexOptions): Promise<IndexSt
     failedRoots: [],
   };
 
-  const seenPaths = new Set<string>();
+  // root ごとに「今回検出した相対パス」を集計しておき、 走査完了後にその
+  // root の DB レコードと突き合わせて消失分を削除する。
+  const seenByRoot = new Map<string, Set<string>>();
+  for (const r of opts.roots) seenByRoot.set(r.id, new Set());
 
   for (const root of opts.roots) {
     try {
-      for await (const f of scanLibrary(root, { extensions: opts.extensions })) {
+      for await (const f of scanLibrary(root.path, { extensions: opts.extensions })) {
         stats.scanned++;
-        seenPaths.add(f.relativePath);
-        // 処理開始時点で currentFile を報告 (ZIP 展開が遅い時も UI に動きが出る)
+        seenByRoot.get(root.id)!.add(f.relativePath);
+        // UI 表示用に `<rootName>/<relativePath>` を渡す (root が 1 つの時もこの形式)
+        const labelled = `${root.name}/${f.relativePath}`;
         opts.onProgress?.({
           scanned: stats.scanned,
           upserted: stats.upserted,
           skipped: stats.skipped,
           comicInfoImported: stats.comicInfoImported,
-          currentFile: f.relativePath,
+          currentFile: labelled,
         });
 
         // 差分判定: incremental モードで path + size + mtime が一致なら skip
         if (mode === "incremental") {
-          const existing = getBookByPath(db, f.relativePath);
+          const existing = getBookByPath(db, root.id, f.relativePath);
           if (
             existing &&
             existing.sizeBytes === f.sizeBytes &&
@@ -99,13 +103,14 @@ export async function reindex(db: Database, opts: IndexOptions): Promise<IndexSt
               upserted: stats.upserted,
               skipped: stats.skipped,
               comicInfoImported: stats.comicInfoImported,
-              currentFile: f.relativePath,
+              currentFile: labelled,
             });
             continue;
           }
         }
 
         const book = upsertBook(db, {
+          rootId: root.id,
           path: f.relativePath,
           filename: f.filename,
           title: titleFromFilename(f.filename),
@@ -130,7 +135,7 @@ export async function reindex(db: Database, opts: IndexOptions): Promise<IndexSt
             deleteComicInfo(db, book.id);
           }
         } catch (e) {
-          console.warn(`[indexer] ComicInfo.xml 読込失敗 ${f.relativePath}:`, e);
+          console.warn(`[indexer] ComicInfo.xml 読込失敗 ${labelled}:`, e);
         }
         // 処理完了時点で comicInfoImported を最新化 (currentFile は次のループで上書き)
         opts.onProgress?.({
@@ -138,19 +143,26 @@ export async function reindex(db: Database, opts: IndexOptions): Promise<IndexSt
           upserted: stats.upserted,
           skipped: stats.skipped,
           comicInfoImported: stats.comicInfoImported,
-          currentFile: f.relativePath,
+          currentFile: labelled,
         });
       }
     } catch (err) {
-      console.error(`[indexer] failed to scan root ${root}:`, err);
-      stats.failedRoots.push(root);
+      console.error(`[indexer] failed to scan root ${root.id} (${root.path}):`, err);
+      stats.failedRoots.push(root.id);
     }
   }
 
-  // 既存DBに存在するがファイルとして見えなくなったレコードを削除
-  for (const path of listAllBookPaths(db)) {
-    if (!seenPaths.has(path)) {
-      if (deleteBookByPath(db, path)) stats.removed++;
+  // 各 root の DB レコードのうち今回検出されなかったものを削除。
+  // 走査に失敗した root は seenByRoot が空になるが、 失敗時に全件削除されると
+  // 困るので failedRoots に含まれていれば skip する。
+  const failedSet = new Set(stats.failedRoots);
+  for (const root of opts.roots) {
+    if (failedSet.has(root.id)) continue;
+    const seen = seenByRoot.get(root.id) ?? new Set<string>();
+    for (const { path } of listBookKeysByRoot(db, root.id)) {
+      if (!seen.has(path)) {
+        if (deleteBookByPath(db, root.id, path)) stats.removed++;
+      }
     }
   }
 

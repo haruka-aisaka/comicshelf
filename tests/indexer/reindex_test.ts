@@ -21,7 +21,7 @@ Deno.test("reindex: 新規追加 → 削除検出 → 再追加 のサイクル"
 
     // 1回目: 2件追加
     let stats = await reindex(db, {
-      roots: [root],
+      roots: [{ id: "default", name: "default", path: root }],
       extensions: [".cbz"],
       now: () => 1000,
     });
@@ -34,7 +34,7 @@ Deno.test("reindex: 新規追加 → 削除検出 → 再追加 のサイクル"
     // 2回目: ファイルを1つ削除し再実行 → removed=1, 残る vol-02 は変更なしで skip
     await Deno.remove(join(root, "series-a/vol-01.cbz"));
     stats = await reindex(db, {
-      roots: [root],
+      roots: [{ id: "default", name: "default", path: root }],
       extensions: [".cbz"],
       now: () => 2000,
     });
@@ -47,7 +47,7 @@ Deno.test("reindex: 新規追加 → 削除検出 → 再追加 のサイクル"
     // 3回目: 同じファイルを書き戻すと新規追加扱い (addedAtが新しくなる)
     await makeFile(root, "series-a/vol-01.cbz", "a");
     stats = await reindex(db, {
-      roots: [root],
+      roots: [{ id: "default", name: "default", path: root }],
       extensions: [".cbz"],
       now: () => 3000,
     });
@@ -67,8 +67,9 @@ Deno.test("reindex: 既存レコードのaddedAtは保持される", async () =>
   const db = openDatabase(":memory:");
   try {
     await makeFile(root, "a.cbz", "x");
-    await reindex(db, { roots: [root], extensions: [".cbz"], now: () => 100 });
-    await reindex(db, { roots: [root], extensions: [".cbz"], now: () => 200 });
+    const lr = [{ id: "default", name: "default", path: root }];
+    await reindex(db, { roots: lr, extensions: [".cbz"], now: () => 100 });
+    await reindex(db, { roots: lr, extensions: [".cbz"], now: () => 200 });
     const [book] = listBooks(db);
     assertEquals(book!.addedAt, 100);
   } finally {
@@ -83,13 +84,16 @@ Deno.test("reindex: 存在しないルートはfailedRootsに記録され他は�
   try {
     await makeFile(root, "a.cbz", "x");
     const stats = await reindex(db, {
-      roots: [root, "/nonexistent/path/comicshelf-test"],
+      roots: [
+        { id: "good", name: "good", path: root },
+        { id: "bad", name: "bad", path: "/nonexistent/path/comicshelf-test" },
+      ],
       extensions: [".cbz"],
       now: () => 1,
     });
     assertEquals(stats.scanned, 1);
     assertEquals(stats.upserted, 1);
-    assertEquals(stats.failedRoots.length, 1);
+    assertEquals(stats.failedRoots, ["bad"]);
   } finally {
     db.close();
     await Deno.remove(root, { recursive: true });
@@ -115,7 +119,7 @@ Deno.test("reindex: CBZ 内の ComicInfo.xml を取り込んで DB に反映", a
     await writeCbz(cbzWithout, [{ name: "001.jpg", data: fakeJpegBytes() }]);
 
     const stats = await reindex(db, {
-      roots: [root],
+      roots: [{ id: "default", name: "default", path: root }],
       extensions: [".cbz"],
       now: () => 1000,
     });
@@ -151,7 +155,7 @@ Deno.test("reindex: incremental モードで変更なしファイルは skip さ
     await writeCbz(join(root, "a.cbz"), [{ name: "001.jpg", data: fakeJpegBytes() }]);
     await writeCbz(join(root, "b.cbz"), [{ name: "001.jpg", data: fakeJpegBytes() }]);
     const initial = await reindex(db, {
-      roots: [root],
+      roots: [{ id: "default", name: "default", path: root }],
       extensions: [".cbz"],
       mode: "full",
       now: () => 1000,
@@ -162,7 +166,7 @@ Deno.test("reindex: incremental モードで変更なしファイルは skip さ
 
     // 2 回目 (incremental): 全件 skip
     const second = await reindex(db, {
-      roots: [root],
+      roots: [{ id: "default", name: "default", path: root }],
       extensions: [".cbz"],
       mode: "incremental",
       now: () => 2000,
@@ -185,13 +189,18 @@ Deno.test("reindex: incremental で 1 ファイルだけ更新されたら 1 件
     const bPath = join(root, "b.cbz");
     await writeCbz(aPath, [{ name: "001.jpg", data: fakeJpegBytes() }]);
     await writeCbz(bPath, [{ name: "001.jpg", data: fakeJpegBytes() }]);
-    await reindex(db, { roots: [root], extensions: [".cbz"], mode: "full", now: () => 1000 });
+    await reindex(db, {
+      roots: [{ id: "default", name: "default", path: root }],
+      extensions: [".cbz"],
+      mode: "full",
+      now: () => 1000,
+    });
 
     // a.cbz の mtime を未来に進める (utimesSync)
     const future = new Date(Date.now() + 60 * 60 * 1000);
     await Deno.utime(aPath, future, future);
     const stats = await reindex(db, {
-      roots: [root],
+      roots: [{ id: "default", name: "default", path: root }],
       extensions: [".cbz"],
       mode: "incremental",
       now: () => 2000,
@@ -211,11 +220,16 @@ Deno.test("reindex: incremental でも削除検出は動く", async () => {
   try {
     await writeCbz(join(root, "a.cbz"), [{ name: "001.jpg", data: fakeJpegBytes() }]);
     await writeCbz(join(root, "b.cbz"), [{ name: "001.jpg", data: fakeJpegBytes() }]);
-    await reindex(db, { roots: [root], extensions: [".cbz"], mode: "full", now: () => 1000 });
+    await reindex(db, {
+      roots: [{ id: "default", name: "default", path: root }],
+      extensions: [".cbz"],
+      mode: "full",
+      now: () => 1000,
+    });
 
     await Deno.remove(join(root, "b.cbz"));
     const stats = await reindex(db, {
-      roots: [root],
+      roots: [{ id: "default", name: "default", path: root }],
       extensions: [".cbz"],
       mode: "incremental",
       now: () => 2000,
@@ -235,10 +249,15 @@ Deno.test("reindex: full モードでは skipped は常に 0", async () => {
   const db = openDatabase(":memory:");
   try {
     await writeCbz(join(root, "a.cbz"), [{ name: "001.jpg", data: fakeJpegBytes() }]);
-    await reindex(db, { roots: [root], extensions: [".cbz"], mode: "full", now: () => 1000 });
+    await reindex(db, {
+      roots: [{ id: "default", name: "default", path: root }],
+      extensions: [".cbz"],
+      mode: "full",
+      now: () => 1000,
+    });
     // 2 回目も full なら skipped=0、 upserted=1
     const stats = await reindex(db, {
-      roots: [root],
+      roots: [{ id: "default", name: "default", path: root }],
       extensions: [".cbz"],
       mode: "full",
       now: () => 2000,
@@ -262,16 +281,82 @@ Deno.test("reindex: ComicInfo.xml が後から消えると DB からも削除さ
       { name: "001.jpg", data: fakeJpegBytes() },
       { name: "ComicInfo.xml", data: `<ComicInfo><Title>X</Title></ComicInfo>` },
     ]);
-    await reindex(db, { roots: [root], extensions: [".cbz"], now: () => 1000 });
+    await reindex(db, {
+      roots: [{ id: "default", name: "default", path: root }],
+      extensions: [".cbz"],
+      now: () => 1000,
+    });
     const book = listBooks(db)[0]!;
     assertEquals(getComicInfo(db, book.id)?.title, "X");
 
     // 2 回目: ComicInfo.xml を除いて書き換え (= 削除)
     await writeCbz(cbz, [{ name: "001.jpg", data: fakeJpegBytes() }]);
-    await reindex(db, { roots: [root], extensions: [".cbz"], now: () => 2000 });
+    await reindex(db, {
+      roots: [{ id: "default", name: "default", path: root }],
+      extensions: [".cbz"],
+      now: () => 2000,
+    });
     assertEquals(getComicInfo(db, book.id), null);
   } finally {
     db.close();
     await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("reindex: 複数 root で同じ相対パスを持つファイルも両方保持される", async () => {
+  const r1 = await Deno.makeTempDir({ prefix: "comicshelf-multi-1-" });
+  const r2 = await Deno.makeTempDir({ prefix: "comicshelf-multi-2-" });
+  const db = openDatabase(":memory:", "lib1");
+  try {
+    // 両 root の同じ相対パスに別内容の CBZ を置く
+    await writeCbz(join(r1, "book.cbz"), [{ name: "001.jpg", data: fakeJpegBytes(1) }]);
+    await writeCbz(join(r2, "book.cbz"), [{ name: "001.jpg", data: fakeJpegBytes(2) }]);
+    const stats = await reindex(db, {
+      roots: [
+        { id: "lib1", name: "Library 1", path: r1 },
+        { id: "lib2", name: "Library 2", path: r2 },
+      ],
+      extensions: [".cbz"],
+      now: () => 1000,
+    });
+    assertEquals(stats.scanned, 2);
+    assertEquals(stats.upserted, 2);
+    const books = listBooks(db, { sort: "title" });
+    assertEquals(books.length, 2);
+    assertEquals(books.map((b) => b.rootId).sort(), ["lib1", "lib2"]);
+  } finally {
+    db.close();
+    await Deno.remove(r1, { recursive: true });
+    await Deno.remove(r2, { recursive: true });
+  }
+});
+
+Deno.test("reindex: 片方の root を消しても他方のレコードは削除されない", async () => {
+  const r1 = await Deno.makeTempDir({ prefix: "comicshelf-multi-keep-1-" });
+  const r2 = await Deno.makeTempDir({ prefix: "comicshelf-multi-keep-2-" });
+  const db = openDatabase(":memory:", "lib1");
+  try {
+    await writeCbz(join(r1, "a.cbz"), [{ name: "001.jpg", data: fakeJpegBytes(1) }]);
+    await writeCbz(join(r2, "b.cbz"), [{ name: "001.jpg", data: fakeJpegBytes(2) }]);
+    const lr = [
+      { id: "lib1", name: "Library 1", path: r1 },
+      { id: "lib2", name: "Library 2", path: r2 },
+    ];
+    await reindex(db, { roots: lr, extensions: [".cbz"], now: () => 1000 });
+    assertEquals(listBooks(db).length, 2);
+
+    // 2 回目: lib1 だけで実行 → lib2 のレコードは触らない
+    const stats = await reindex(db, {
+      roots: [lr[0]!],
+      extensions: [".cbz"],
+      mode: "incremental",
+      now: () => 2000,
+    });
+    assertEquals(stats.removed, 0);
+    assertEquals(listBooks(db).length, 2);
+  } finally {
+    db.close();
+    await Deno.remove(r1, { recursive: true });
+    await Deno.remove(r2, { recursive: true });
   }
 });
