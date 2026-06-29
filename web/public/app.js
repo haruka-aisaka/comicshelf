@@ -548,7 +548,11 @@ function makeCard(book) {
   const img = document.createElement("img");
   img.className = "thumb";
   img.loading = "lazy";
-  img.src = `/api/books/${book.id}/thumbnail`;
+  // 表紙ページが変わった時にブラウザ / SW のサムネキャッシュを確実に破棄するため、
+  // coverPageIndex を URL クエリに含める (未設定なら 0 = 先頭ページ既定)。
+  // サーバ側は ?v= を無視するので動作には影響しない。
+  const coverVer = typeof book.coverPageIndex === "number" ? book.coverPageIndex : 0;
+  img.src = `/api/books/${book.id}/thumbnail?v=${coverVer}`;
   // ComicInfo の title があれば優先 (なければファイル名由来)
   const displayTitle = book.comicInfo?.title ?? book.title;
   img.alt = displayTitle;

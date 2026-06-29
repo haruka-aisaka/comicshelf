@@ -4,7 +4,7 @@ import { Database } from "@db/sqlite";
  * 現在のスキーマバージョン。
  * マイグレーション追加時にインクリメントする。
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /**
  * テーブル定義 (バージョン1)。
@@ -108,6 +108,19 @@ const SCHEMA_V4 = `
 `;
 
 /**
+ * バージョン 5: ユーザーが選んだ表紙ページを格納。
+ * 未設定の本にはレコードなし → サムネは先頭ページ (index 0) を使う既定挙動。
+ */
+const SCHEMA_V5 = `
+  CREATE TABLE IF NOT EXISTS book_covers (
+    book_id    INTEGER PRIMARY KEY,
+    page_index INTEGER NOT NULL,
+    set_at     INTEGER NOT NULL,
+    FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+  );
+`;
+
+/**
  * SQLite接続を開きスキーマを適用する。
  * パス `:memory:` でインメモリ接続。
  *
@@ -136,6 +149,8 @@ function applyMigrations(db: Database, defaultRootId: string): void {
   // v4: favorites テーブル追加。 ON DELETE CASCADE で書籍削除と連動。
   // IF NOT EXISTS なので何度実行しても安全。
   db.exec(SCHEMA_V4);
+  // v5: book_covers テーブル追加。 favorites と同じく完全に独立したテーブル。
+  db.exec(SCHEMA_V5);
   if (current === null) {
     db.prepare("INSERT INTO schema_meta(key, value) VALUES('version', ?)").run(
       String(SCHEMA_VERSION),

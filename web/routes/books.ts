@@ -3,8 +3,10 @@ import type { Database } from "@db/sqlite";
 import type { LibraryService } from "../../src/library.ts";
 import type { ReadStatusFilter, SortKey } from "../../src/types.ts";
 import {
+  deleteCover,
   getBookById,
   getComicInfo,
+  getCover,
   getFavorite,
   getReadState,
   listBooks,
@@ -13,6 +15,7 @@ import {
   listRecentlyAdded,
   listRecentlyFinished,
   setFavorite,
+  upsertCover,
   upsertReadState,
 } from "../../src/db/repository.ts";
 
@@ -100,7 +103,8 @@ export function buildBooksRoutes(deps: BooksDeps): Hono {
     const readState = getReadState(deps.db, id);
     const comicInfo = getComicInfo(deps.db, id);
     const favorite = getFavorite(deps.db, id);
-    return c.json({ book, readState, comicInfo, favorite });
+    const cover = getCover(deps.db, id);
+    return c.json({ book, readState, comicInfo, favorite, cover });
   });
 
   app.post("/books/:id/favorite", async (c) => {
@@ -168,6 +172,37 @@ export function buildBooksRoutes(deps: BooksDeps): Hono {
         "etag": etag,
       },
     });
+  });
+
+  app.post("/books/:id/cover", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    const book = getBookById(deps.db, id);
+    if (!book) return c.json({ error: "book not found" }, 404);
+    const body = await c.req.json().catch(() => null) as
+      | { pageIndex?: unknown }
+      | null;
+    if (!body || typeof body.pageIndex !== "number" || !Number.isFinite(body.pageIndex)) {
+      return c.json({ error: "pageIndex (number) required" }, 400);
+    }
+    const pageIndex = Math.floor(body.pageIndex);
+    if (pageIndex < 0) return c.json({ error: "pageIndex must be >= 0" }, 400);
+    if (book.pageCount !== null && pageIndex >= book.pageCount) {
+      return c.json({ error: "pageIndex out of range" }, 400);
+    }
+    const state = upsertCover(deps.db, id, pageIndex, now());
+    // 既存サムネキャッシュを破棄 → 次回 GET で新ページから再生成
+    await deps.library.removeThumbnailCache(id);
+    return c.json({ cover: state });
+  });
+
+  app.delete("/books/:id/cover", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    if (!getBookById(deps.db, id)) return c.json({ error: "book not found" }, 404);
+    deleteCover(deps.db, id);
+    await deps.library.removeThumbnailCache(id);
+    return c.json({ cover: null });
   });
 
   app.post("/books/:id/progress", async (c) => {

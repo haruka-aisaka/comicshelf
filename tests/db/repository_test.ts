@@ -4,8 +4,11 @@ import {
   countFavorites,
   deleteBookByPath,
   deleteComicInfo,
+  deleteCover,
+  deleteCoverIfOutOfRange,
   getBookById,
   getComicInfo,
+  getCover,
   getFavorite,
   getReadState,
   listBookKeysByRoot,
@@ -19,6 +22,7 @@ import {
   updatePageCount,
   upsertBook,
   upsertComicInfo,
+  upsertCover,
   upsertReadState,
 } from "../../src/db/repository.ts";
 import type { BookUpsertInput } from "../../src/db/repository.ts";
@@ -562,4 +566,68 @@ Deno.test("ON DELETE CASCADE: 書籍削除で favorites も消える", () => {
   assertEquals(countFavorites(db), 1);
   deleteBookByPath(db, a.rootId, a.path);
   assertEquals(countFavorites(db), 0);
+});
+
+Deno.test("book_covers: upsertCover / getCover / deleteCover の往復", () => {
+  const db = openDatabase(":memory:");
+  const a = upsertBook(db, makeBook({ path: "a.cbz" }), 1);
+
+  // 未設定なら null
+  assertEquals(getCover(db, a.id), null);
+
+  // 設定
+  const s1 = upsertCover(db, a.id, 5, 1000);
+  assertEquals(s1.pageIndex, 5);
+  assertEquals(s1.setAt, 1000);
+  assertEquals(getCover(db, a.id)?.pageIndex, 5);
+
+  // 同じ book に別ページを設定すると上書き、 set_at も更新
+  const s2 = upsertCover(db, a.id, 12, 2000);
+  assertEquals(s2.pageIndex, 12);
+  assertEquals(s2.setAt, 2000);
+  assertEquals(getCover(db, a.id)?.setAt, 2000);
+
+  // 削除
+  deleteCover(db, a.id);
+  assertEquals(getCover(db, a.id), null);
+  // 二回削除しても no-op
+  deleteCover(db, a.id);
+  assertEquals(getCover(db, a.id), null);
+});
+
+Deno.test("book_covers: deleteCoverIfOutOfRange は範囲外のみ削除", () => {
+  const db = openDatabase(":memory:");
+  const a = upsertBook(db, makeBook({ path: "a.cbz" }), 1);
+  upsertCover(db, a.id, 8, 1000);
+
+  // pageCount=20 → 8 は範囲内 → 削除しない
+  assertFalse(deleteCoverIfOutOfRange(db, a.id, 20));
+  assertEquals(getCover(db, a.id)?.pageIndex, 8);
+
+  // pageCount=8 → 8 は範囲外 (0..7 まで) → 削除
+  assertEquals(deleteCoverIfOutOfRange(db, a.id, 8), true);
+  assertEquals(getCover(db, a.id), null);
+
+  // レコードがない状態でも false が返るだけ
+  assertFalse(deleteCoverIfOutOfRange(db, a.id, 5));
+});
+
+Deno.test("book_covers: listBooks の coverPageIndex フィールド", () => {
+  const db = openDatabase(":memory:");
+  const a = upsertBook(db, makeBook({ path: "a.cbz", title: "A" }), 1);
+  upsertBook(db, makeBook({ path: "b.cbz", title: "B" }), 2);
+  upsertCover(db, a.id, 3, 1000);
+
+  const all = listBooks(db, { sort: "title" });
+  assertEquals(all.find((x) => x.title === "A")?.coverPageIndex, 3);
+  assertEquals(all.find((x) => x.title === "B")?.coverPageIndex, null);
+});
+
+Deno.test("ON DELETE CASCADE: 書籍削除で book_covers も消える", () => {
+  const db = openDatabase(":memory:");
+  const a = upsertBook(db, makeBook(), 1);
+  upsertCover(db, a.id, 4, 1000);
+  assertExists(getCover(db, a.id));
+  deleteBookByPath(db, a.rootId, a.path);
+  assertEquals(getCover(db, a.id), null);
 });

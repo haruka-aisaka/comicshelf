@@ -1,8 +1,14 @@
 import type { Database } from "@db/sqlite";
 import { dirname, extname, isAbsolute, join, normalize } from "@std/path";
 import type { Book, Config } from "./types.ts";
-import { getBookById, updatePageCount } from "./db/repository.ts";
-import { type PageEntry, readFirstPage } from "./reader/archive.ts";
+import {
+  deleteCover,
+  deleteCoverIfOutOfRange,
+  getBookById,
+  getCover,
+  updatePageCount,
+} from "./db/repository.ts";
+import { type PageEntry, readFirstPage, readPage } from "./reader/archive.ts";
 import { PageCache } from "./reader/page_cache.ts";
 import { generateThumbnailWebp } from "./reader/thumbnail.ts";
 
@@ -53,6 +59,11 @@ export class LibraryService {
       }));
       if (resolved.book.pageCount !== pages.length) {
         updatePageCount(this.db, bookId, pages.length);
+        // 表紙設定が新ページ数の範囲外になっていたら削除 (= 先頭に戻す)。
+        // 削除した場合はサムネキャッシュも消して次回再生成させる。
+        if (deleteCoverIfOutOfRange(this.db, bookId, pages.length)) {
+          await this.removeThumbnailCache(bookId);
+        }
       }
       return pages;
     } catch (err) {
@@ -88,9 +99,10 @@ export class LibraryService {
   /**
    * サムネイル取得。
    *
-   * - 先頭1ページだけアーカイブから抽出し、 ImageMagickで最大600pxにWebPへ縮小
-   * - 結果を /data/thumbs/{id}.webp にディスクキャッシュ
+   * - `book_covers.page_index` に設定があればそのページ、 なければ先頭ページを使う
+   * - ImageMagickで最大600pxにWebPへ縮小し、 /data/thumbs/{id}.webp にキャッシュ
    * - magickが失敗した場合 (未インストール等) は原本をそのまま返し、 拡張子別パスにキャッシュ
+   * - 指定ページの抽出に失敗した場合は表紙設定を削除して先頭ページに自己修復フォールバック
    *
    * 重要: PageCache.ensure() を経由すると一覧画面で一斉に全展開が走るので、
    *      サムネ用ルートは隔離する。
@@ -115,14 +127,27 @@ export class LibraryService {
       }
     }
 
-    // ミス: アーカイブから先頭ページを抽出
+    // ミス: 表紙設定があればそのページ、 なければ先頭ページを抽出
     const resolved = this.resolveBook(bookId);
     if (!resolved) return null;
+    const cover = getCover(this.db, bookId);
     let page;
     try {
-      page = await readFirstPage(resolved.absPath);
+      if (cover && cover.pageIndex > 0) {
+        page = await readPage(resolved.absPath, cover.pageIndex);
+        if (!page) {
+          // 範囲外 or 抽出失敗 → 設定を消して先頭ページにフォールバック (自己修復)
+          console.warn(
+            `[thumbnail] cover page ${cover.pageIndex} unavailable for ${bookId}, resetting`,
+          );
+          deleteCover(this.db, bookId);
+          page = await readFirstPage(resolved.absPath);
+        }
+      } else {
+        page = await readFirstPage(resolved.absPath);
+      }
     } catch (err) {
-      console.warn(`[thumbnail] readFirstPage failed for ${bookId}:`, err);
+      console.warn(`[thumbnail] readPage failed for ${bookId}:`, err);
       return null;
     }
     if (!page) return null;
@@ -159,6 +184,11 @@ export class LibraryService {
 
   async invalidateBookCache(bookId: number): Promise<void> {
     await this.pageCache.invalidate(bookId);
+    await this.removeThumbnailCache(bookId);
+  }
+
+  /** サムネキャッシュファイル群だけ削除 (PageCache は触らない) */
+  async removeThumbnailCache(bookId: number): Promise<void> {
     const cacheDir = this.thumbnailCacheDir();
     for (const ext of THUMB_CACHE_EXTS) {
       try {

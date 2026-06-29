@@ -307,6 +307,117 @@ Deno.test("API: favorite の異常系 (404 / 400)", async () => {
   }
 });
 
+Deno.test("API: POST/DELETE /books/:id/cover の往復 + GET /books/:id に cover が乗る", async () => {
+  const w = await setupWorld();
+  try {
+    await w.app.app.request("/api/index/rebuild", { method: "POST" });
+    for (let i = 0; i < 100; i++) {
+      const s = await (await w.app.app.request("/api/index/status")).json();
+      if (!s.running && s.lastResult) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const list = await (await w.app.app.request("/api/books")).json();
+    const firstId = list.books[0].id;
+
+    // 初期状態: GET /books/:id の cover は null
+    const before = await (await w.app.app.request(`/api/books/${firstId}`)).json();
+    assertEquals(before.cover, null);
+
+    // 設定
+    const setRes = await w.app.app.request(`/api/books/${firstId}/cover`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pageIndex: 2 }),
+    });
+    assertEquals(setRes.status, 200);
+    const setBody = await setRes.json();
+    assertEquals(setBody.cover.pageIndex, 2);
+
+    // GET でも反映
+    const after = await (await w.app.app.request(`/api/books/${firstId}`)).json();
+    assertEquals(after.cover.pageIndex, 2);
+
+    // 同じ pageIndex を再送しても 200 (idempotent)
+    const reset = await w.app.app.request(`/api/books/${firstId}/cover`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pageIndex: 2 }),
+    });
+    assertEquals(reset.status, 200);
+
+    // listBooks にも coverPageIndex が乗る
+    const listAfter = await (await w.app.app.request("/api/books")).json();
+    const target = listAfter.books.find((b: { id: number }) => b.id === firstId);
+    assertEquals(target?.coverPageIndex, 2);
+
+    // 解除
+    const delRes = await w.app.app.request(`/api/books/${firstId}/cover`, {
+      method: "DELETE",
+    });
+    assertEquals(delRes.status, 200);
+    const delBody = await delRes.json();
+    assertEquals(delBody.cover, null);
+    const afterDel = await (await w.app.app.request(`/api/books/${firstId}`)).json();
+    assertEquals(afterDel.cover, null);
+  } finally {
+    await w.cleanup();
+  }
+});
+
+Deno.test("API: cover の異常系 (404 / 400)", async () => {
+  const w = await setupWorld();
+  try {
+    await w.app.app.request("/api/index/rebuild", { method: "POST" });
+    for (let i = 0; i < 100; i++) {
+      const s = await (await w.app.app.request("/api/index/status")).json();
+      if (!s.running && s.lastResult) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    // 存在しない book → 404
+    const ng = await w.app.app.request("/api/books/99999/cover", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pageIndex: 0 }),
+    });
+    assertEquals(ng.status, 404);
+
+    const list = await (await w.app.app.request("/api/books")).json();
+    const id = list.books[0].id;
+
+    // pageIndex が数値以外 → 400
+    const bad = await w.app.app.request(`/api/books/${id}/cover`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pageIndex: "five" }),
+    });
+    assertEquals(bad.status, 400);
+
+    // 負数 → 400
+    const neg = await w.app.app.request(`/api/books/${id}/cover`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pageIndex: -1 }),
+    });
+    assertEquals(neg.status, 400);
+
+    // 既知 pageCount を 1 ページに固定して 1 を指定 → 400 (out of range)
+    // フィクスチャを先に取得して pageCount を確定させる
+    await w.app.app.request(`/api/books/${id}/pages`);
+    const bookData = await (await w.app.app.request(`/api/books/${id}`)).json();
+    const pageCount = bookData.book.pageCount;
+    if (typeof pageCount === "number") {
+      const oob = await w.app.app.request(`/api/books/${id}/cover`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pageIndex: pageCount }),
+      });
+      assertEquals(oob.status, 400);
+    }
+  } finally {
+    await w.cleanup();
+  }
+});
+
 Deno.test("API: ?q=writer:岸本斉史 で writer 完全一致のみ", async () => {
   const w = await setupWorld();
   try {

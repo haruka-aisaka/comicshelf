@@ -1414,6 +1414,72 @@ details[open] > .dir-summary::before {
   color: #0f1115;
 }
 
+/* ---------- 表紙設定ボタン ---------- */
+.menu-cover {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+}
+.menu-cover[hidden] {
+  display: none;
+}
+.cover-btn {
+  flex: 1;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--fg, #e6e8eb);
+  padding: 8px 14px;
+  font-size: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.cover-btn:hover:not(:disabled) {
+  background: var(--surface-3, #2a2e36);
+}
+.cover-btn[hidden] {
+  display: none;
+}
+.cover-btn:disabled {
+  cursor: default;
+  opacity: 0.8;
+}
+.cover-btn.is-current {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--surface-1, #1a1d24);
+}
+.cover-clear-btn {
+  flex: 0 1 auto;
+  min-width: 6em;
+  color: var(--fg-muted, #b8bcc4);
+}
+
+/* ---------- トースト (画面下部のステータス表示) ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: max(24px, calc(24px + var(--safe-bottom)));
+  transform: translateX(-50%) translateY(8px);
+  background: rgba(20, 22, 28, 0.95);
+  color: var(--fg, #e6e8eb);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 10px 18px;
+  font-size: 13px;
+  z-index: 70;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+}
+.toast[hidden] {
+  display: none;
+}
+.toast.is-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
 /* ---------- 最終ページ既読化モーダル ---------- */
 .finish-modal-backdrop {
   position: fixed;

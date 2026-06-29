@@ -104,12 +104,23 @@
           <span class="auto-pause-label">再開</span>
         </button>
       </div>
+      <div class="menu-row menu-cover" id="menu-cover-row" hidden>
+        <button id="cover-set-btn" type="button" class="cover-btn">
+          このページを表紙に設定
+        </button>
+        <button id="cover-clear-btn" type="button" class="cover-btn cover-clear-btn" hidden>
+          表紙設定を解除
+        </button>
+      </div>
       <div class="menu-row">
         <button id="finish-and-close" type="button" class="finish-btn" hidden>
           既読にして閉じる
         </button>
       </div>
     </div>
+
+    <!-- 操作フィードバック用 toast (お気に入り / 表紙設定など) -->
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
     <!-- 最終ページで「次へ」操作した時の既読化モーダル -->
     <div id="finish-modal-backdrop" class="finish-modal-backdrop" hidden></div>

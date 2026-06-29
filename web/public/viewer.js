@@ -64,6 +64,8 @@ let saveTimer = null;
 let pagesReady = null;
 /** 既読 (finished=true) か。 既読本は途中位置を保存せず、 再度開いた時に先頭から始める */
 let finishedState = false;
+/** 設定済みの表紙ページ (0-indexed)。 null なら未設定 (= 先頭ページが表紙) */
+let coverPageIndex = /** @type {number|null} */ (null);
 
 const prefetched = new Map();
 const PREFETCH_RADIUS = 2;
@@ -182,6 +184,7 @@ async function init() {
   }
 
   finishedState = bookData.readState?.finished === true;
+  coverPageIndex = typeof bookData.cover?.pageIndex === "number" ? bookData.cover.pageIndex : null;
   // 既読本は先頭から開く (lastPage は読了時の値のまま DB に保持される)。
   // ?page=N で明示指定された場合は従来通りその位置から。
   if (!params.has("page") && !finishedState && bookData.readState?.lastPage >= 0) {
@@ -191,6 +194,7 @@ async function init() {
     indicator.textContent = `${currentPage + 1} / …`;
   }
   applyReadStateUi();
+  applyCoverUi();
 
   pagesReady.then((pagesData) => {
     totalPages = pagesData.pages.length;
@@ -310,6 +314,16 @@ function bindEvents() {
       if (finishedState) confirmAndResetToUnread();
       else finishAndClose();
     });
+  }
+
+  // 表紙設定 / 解除ボタン
+  const coverSetBtn = document.querySelector("#cover-set-btn");
+  if (coverSetBtn instanceof HTMLElement) {
+    coverSetBtn.addEventListener("click", () => setCoverToCurrentPage());
+  }
+  const coverClearBtn = document.querySelector("#cover-clear-btn");
+  if (coverClearBtn instanceof HTMLElement) {
+    coverClearBtn.addEventListener("click", () => clearCoverSetting());
   }
 
   // 最終ページ既読化モーダルのボタン / backdrop
@@ -910,6 +924,7 @@ function jumpTo(n, opts = {}) {
   prefetchAround(currentPage);
   syncSeekUi();
   applyReadStateUi();
+  applyCoverUi();
   AutoAdvance.onUserPageChange();
 }
 
@@ -1125,6 +1140,106 @@ function applyReadStateUi() {
     finishBtn.removeAttribute("hidden");
   } else {
     finishBtn.setAttribute("hidden", "");
+  }
+}
+
+/** 表紙設定状態を UI に反映
+ *  - 未設定 or 別ページ表示中: 「このページ (Np) を表紙に設定」
+ *  - 設定済み + 表紙ページ表示中: 「現在の表紙です (✓)」 (disabled)
+ *  - 設定済み: 加えて「表紙設定を解除」 を表示
+ *
+ *  見開き表示中は currentPage (左ページ) を表紙対象とする。
+ */
+function applyCoverUi() {
+  const row = document.querySelector("#menu-cover-row");
+  const setBtn = /** @type {HTMLButtonElement|null} */ (document.querySelector("#cover-set-btn"));
+  const clearBtn = /** @type {HTMLButtonElement|null} */ (
+    document.querySelector("#cover-clear-btn")
+  );
+  if (!(row instanceof HTMLElement) || !setBtn || !clearBtn) return;
+  row.removeAttribute("hidden");
+
+  const isCurrentCover = coverPageIndex !== null && coverPageIndex === currentPage;
+  if (isCurrentCover) {
+    setBtn.textContent = "現在の表紙です ✓";
+    setBtn.classList.add("is-current");
+    setBtn.disabled = true;
+  } else {
+    setBtn.textContent = `このページ (${currentPage + 1} p) を表紙に設定`;
+    setBtn.classList.remove("is-current");
+    setBtn.disabled = false;
+  }
+  if (coverPageIndex !== null) {
+    clearBtn.removeAttribute("hidden");
+  } else {
+    clearBtn.setAttribute("hidden", "");
+  }
+}
+
+/** トースト表示 (2 秒で自動消去)。 連続表示時は既存のタイマーをキャンセル。 */
+/** @type {ReturnType<typeof setTimeout> | null} */
+let toastTimer = null;
+function showToast(message) {
+  const el = document.querySelector("#toast");
+  if (!(el instanceof HTMLElement)) return;
+  el.textContent = message;
+  el.removeAttribute("hidden");
+  el.classList.add("is-visible");
+  if (toastTimer !== null) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.classList.remove("is-visible");
+    // CSS トランジション (200ms) 経過後に hidden 化 (連続表示で再表示しても visible のまま動かない)
+    setTimeout(() => {
+      if (!el.classList.contains("is-visible")) el.setAttribute("hidden", "");
+    }, 220);
+    toastTimer = null;
+  }, 2000);
+}
+
+async function setCoverToCurrentPage() {
+  const setBtn = /** @type {HTMLButtonElement|null} */ (document.querySelector("#cover-set-btn"));
+  if (!Number.isFinite(bookId) || !setBtn || setBtn.disabled) return;
+  const target = currentPage;
+  setBtn.disabled = true;
+  const prev = coverPageIndex;
+  coverPageIndex = target; // 楽観更新
+  applyCoverUi();
+  try {
+    const res = await fetch(`/api/books/${bookId}/cover`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pageIndex: target }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    showToast("表紙を設定しました");
+  } catch (e) {
+    console.warn("表紙設定失敗", e);
+    coverPageIndex = prev;
+    applyCoverUi();
+    showToast("表紙の設定に失敗しました");
+  }
+}
+
+async function clearCoverSetting() {
+  const clearBtn = /** @type {HTMLButtonElement|null} */ (
+    document.querySelector("#cover-clear-btn")
+  );
+  if (!Number.isFinite(bookId)) return;
+  if (clearBtn) clearBtn.disabled = true;
+  const prev = coverPageIndex;
+  coverPageIndex = null; // 楽観更新
+  applyCoverUi();
+  try {
+    const res = await fetch(`/api/books/${bookId}/cover`, { method: "DELETE" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    showToast("表紙設定を解除しました");
+  } catch (e) {
+    console.warn("表紙解除失敗", e);
+    coverPageIndex = prev;
+    applyCoverUi();
+    showToast("表紙設定の解除に失敗しました");
+  } finally {
+    if (clearBtn) clearBtn.disabled = false;
   }
 }
 

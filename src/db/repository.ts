@@ -154,6 +154,7 @@ export interface BookWithReadState extends Book {
   readState: ReadState | null;
   comicInfo: ComicInfoSummary | null;
   favorited: boolean;
+  coverPageIndex: number | null;
 }
 
 interface BookRowWithRead extends BookRow {
@@ -167,12 +168,13 @@ interface BookRowWithRead extends BookRow {
   ci_tags: string | null;
   ci_manga: string | null;
   fav_created_at: number | null;
+  bc_page_index: number | null;
 }
 
 /**
  * 一覧系 SQL で共通利用する SELECT 句 + JOIN。
- * read_states / comic_info / favorites を LEFT JOIN し、 rowToBookWithRead が
- * 期待する全カラムを生成する。
+ * read_states / comic_info / favorites / book_covers を LEFT JOIN し、
+ * rowToBookWithRead が期待する全カラムを生成する。
  */
 const BOOK_SELECT_WITH_JOINS = `
   SELECT b.*,
@@ -185,11 +187,13 @@ const BOOK_SELECT_WITH_JOINS = `
     ci.penciller   AS ci_penciller,
     ci.tags        AS ci_tags,
     ci.manga       AS ci_manga,
-    f.created_at   AS fav_created_at
+    f.created_at   AS fav_created_at,
+    bc.page_index  AS bc_page_index
   FROM books b
-  LEFT JOIN read_states r ON r.book_id = b.id
+  LEFT JOIN read_states r  ON r.book_id  = b.id
   LEFT JOIN comic_info  ci ON ci.book_id = b.id
   LEFT JOIN favorites   f  ON f.book_id  = b.id
+  LEFT JOIN book_covers bc ON bc.book_id = b.id
 `;
 
 function rowToBookWithRead(r: BookRowWithRead): BookWithReadState {
@@ -211,7 +215,13 @@ function rowToBookWithRead(r: BookRowWithRead): BookWithReadState {
   }
   if (r.ci_manga !== null) ci.manga = r.ci_manga as ComicInfoSummary["manga"];
   const comicInfo = Object.keys(ci).length > 0 ? ci : null;
-  return { ...book, readState, comicInfo, favorited: r.fav_created_at !== null };
+  return {
+    ...book,
+    readState,
+    comicInfo,
+    favorited: r.fav_created_at !== null,
+    coverPageIndex: r.bc_page_index,
+  };
 }
 
 export function listBooks(db: Database, opts: ListBooksOptions = {}): BookWithReadState[] {
@@ -496,6 +506,56 @@ export function setFavorite(
 export function countFavorites(db: Database): number {
   const row = db.prepare("SELECT COUNT(*) AS c FROM favorites").get<{ c: number }>();
   return row?.c ?? 0;
+}
+
+/** 表紙ページ設定 (未設定なら null)。 page_index は 0-indexed。 */
+export interface CoverState {
+  bookId: number;
+  pageIndex: number;
+  setAt: number;
+}
+
+/** 表紙ページ設定を取得 (なければ null) */
+export function getCover(db: Database, bookId: number): CoverState | null {
+  const row = db
+    .prepare("SELECT page_index, set_at FROM book_covers WHERE book_id = ?")
+    .get<{ page_index: number; set_at: number }>(bookId);
+  return row ? { bookId, pageIndex: row.page_index, setAt: row.set_at } : null;
+}
+
+/** 表紙ページを設定 (idempotent。 set_at は毎回更新) */
+export function upsertCover(
+  db: Database,
+  bookId: number,
+  pageIndex: number,
+  now: number,
+): CoverState {
+  db.prepare(`
+    INSERT INTO book_covers (book_id, page_index, set_at) VALUES (?, ?, ?)
+    ON CONFLICT(book_id) DO UPDATE SET page_index = excluded.page_index, set_at = excluded.set_at
+  `).run(bookId, pageIndex, now);
+  return { bookId, pageIndex, setAt: now };
+}
+
+/** 表紙ページ設定を削除 (= 先頭ページに戻す)。 既にレコードがなくても no-op */
+export function deleteCover(db: Database, bookId: number): void {
+  db.prepare("DELETE FROM book_covers WHERE book_id = ?").run(bookId);
+}
+
+/**
+ * 表紙ページ設定が `[0, pageCount-1]` の範囲外なら削除する。
+ * ZIP 内のページが減って既存の表紙設定が指せなくなったケースの自己修復。
+ * 削除した場合は true を返す (= 呼び出し側でサムネキャッシュを invalidate する判断に使う)。
+ */
+export function deleteCoverIfOutOfRange(
+  db: Database,
+  bookId: number,
+  pageCount: number,
+): boolean {
+  const result = db
+    .prepare("DELETE FROM book_covers WHERE book_id = ? AND page_index >= ?")
+    .run(bookId, pageCount);
+  return result > 0;
 }
 
 /** 読書状態の取得 (なければnull) */
