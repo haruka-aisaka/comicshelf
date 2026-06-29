@@ -1538,6 +1538,35 @@ details[open] > .dir-summary::before {
 .finish-modal-confirm[hidden] {
   display: none;
 }
+
+/* お気に入りに加えて閉じる: ゴールド系の特別感のあるボタン */
+.finish-modal-favorite {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: linear-gradient(135deg, #ffd54a 0%, #ffaa3a 100%);
+  border: 1px solid #f0b020;
+  color: #2a1f00;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 10px rgba(255, 180, 60, 0.25);
+}
+.finish-modal-favorite:hover {
+  filter: brightness(1.05);
+  box-shadow: 0 4px 14px rgba(255, 180, 60, 0.35);
+}
+.finish-modal-favorite:active {
+  filter: brightness(0.95);
+  box-shadow: 0 1px 4px rgba(255, 180, 60, 0.2);
+}
+.finish-modal-fav-icon {
+  font-size: 18px;
+  line-height: 1;
+  /* 文字色 (濃茶) より少し明るくすることで星が際立つ */
+  color: #4a2f00;
+  text-shadow: 0 0 6px rgba(255, 230, 120, 0.7);
+}
 .finish-modal-cancel {
   background: transparent;
   border: 1px solid var(--border);
