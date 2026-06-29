@@ -1,6 +1,7 @@
 import type { Database } from "@db/sqlite";
 import type { Book, ReadState, ReadStatusFilter, SortKey } from "../types.ts";
 import type { ComicInfo } from "../comicinfo/parser.ts";
+import { parseSearchQuery, type SearchToken } from "../search/query.ts";
 
 /** DBから取得した生の書籍行 (snake_case) */
 interface BookRow {
@@ -243,13 +244,56 @@ export function listBooks(db: Database, opts: ListBooksOptions = {}): BookWithRe
       params.push(opts.directory, `${escaped}/%`);
     }
   }
-  const trimmedQuery = opts.query?.trim();
-  if (trimmedQuery) {
-    // LIKE のメタ文字 (% _ \) をエスケープして部分一致パターンに整形
-    const escaped = trimmedQuery.replace(/[\\%_]/g, (m) => `\\${m}`);
+  // 検索クエリ: prefix 構文 (writer: / tag: 等) に対応する parser を通し、
+  // トークン単位で AND 結合した WHERE 句を組み立てる。
+  const parsed = parseSearchQuery(opts.query);
+  for (const tok of parsed) {
+    const clause = searchTokenClause(tok);
+    if (clause) {
+      whereParts.push(clause.sql);
+      for (const p of clause.params) params.push(p);
+    }
+  }
+  const statusClause = statusFilterClause(status);
+  if (statusClause) whereParts.push(statusClause);
+  const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
+
+  const sql = `${selectClause}
+    ${whereSql}
+    ORDER BY ${orderBy}
+    LIMIT ? OFFSET ?`;
+  params.push(limit, offset);
+  return db.prepare(sql).all<BookRowWithRead>(...params).map(rowToBookWithRead);
+}
+
+/**
+ * 検索トークン 1 つを WHERE 句の SQL 断片に変換する。
+ *   - field=null: 横断 LIKE (タイトル / ディレクトリ / ComicInfo 主要列)
+ *   - tag/genre: ComicInfo の JSON 配列に <値> 要素が含まれるかで完全一致
+ *     格納形式は `["a","b"]` の文字列。 LIKE で `%"値"%` を判定すれば
+ *     要素境界が JSON のダブルクォートで保証される
+ *   - character: ComicInfo の characters はカンマ区切り。 `, ` も `,` も
+ *     許容するため REPLACE で正規化してから完全一致を判定
+ *   - 単一フィールド (writer/series/...): `= ? COLLATE NOCASE`
+ * いずれも値が空文字なら null を返してトークンを無視する。
+ */
+function searchTokenClause(
+  tok: SearchToken,
+): { sql: string; params: (string | number)[] } | null {
+  const v = tok.value;
+  if (
+    v === "" && tok.field !== "writer" && tok.field !== "series" &&
+    tok.field !== "penciller" && tok.field !== "publisher" &&
+    tok.field !== "imprint"
+  ) {
+    // tag/genre/character/全文 で空文字は無視 (writer 等の空文字一致は許容)
+    if (v === "") return null;
+  }
+  // 全文 (field=null): タイトル / ディレクトリ / ComicInfo 主要文字列を OR 横断 LIKE
+  if (tok.field === null) {
+    if (v === "") return null;
+    const escaped = v.replace(/[\\%_]/g, (m) => `\\${m}`);
     const pattern = `%${escaped}%`;
-    // 検索対象: ファイル名由来の title/directory + ComicInfo の主要文字列フィールド
-    // tags/genre は JSON 文字列 (["tag1","tag2"]) として格納されているので、 そのまま部分一致
     const cols = [
       "b.title",
       "b.directory",
@@ -263,21 +307,56 @@ export function listBooks(db: Database, opts: ListBooksOptions = {}): BookWithRe
       "ci.tags",
       "ci.genre",
     ];
-    whereParts.push(
-      `(${cols.map((c) => `${c} LIKE ? ESCAPE '\\' COLLATE NOCASE`).join(" OR ")})`,
-    );
-    for (let i = 0; i < cols.length; i++) params.push(pattern);
+    const sql = `(${cols.map((c) => `${c} LIKE ? ESCAPE '\\' COLLATE NOCASE`).join(" OR ")})`;
+    return { sql, params: cols.map(() => pattern) };
   }
-  const statusClause = statusFilterClause(status);
-  if (statusClause) whereParts.push(statusClause);
-  const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
+  // 配列フィールド: JSON 文字列内に "値" を要素として含むかで判定
+  if (tok.field === "tag" || tok.field === "genre") {
+    if (v === "") return null;
+    // JSON 文字列にエンコード時のクォート 2 つを LIKE パターンに埋め込む。
+    // 値内の " と \ は JSON エンコード時にエスケープされるので同じ変換をかける。
+    const jsonEncoded = v.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    // LIKE メタ文字をエスケープ
+    const escaped = jsonEncoded.replace(/[\\%_]/g, (m) => `\\${m}`);
+    const col = tok.field === "tag" ? "ci.tags" : "ci.genre";
+    return {
+      sql: `${col} LIKE ? ESCAPE '\\' COLLATE NOCASE`,
+      params: [`%"${escaped}"%`],
+    };
+  }
+  // characters: カンマ区切り文字列。 ", " / "," どちらでも対応するよう正規化。
+  if (tok.field === "character") {
+    if (v === "") return null;
+    const escaped = v.replace(/[\\%_]/g, (m) => `\\${m}`);
+    // SELECT 時に ', ' を ',' に置換し、 両端にカンマを付けて `,値,` の
+    // 部分一致で要素単位の完全一致を実現
+    return {
+      sql:
+        `(',' || REPLACE(IFNULL(ci.characters, ''), ', ', ',') || ',') LIKE ? ESCAPE '\\' COLLATE NOCASE`,
+      params: [`%,${escaped},%`],
+    };
+  }
+  // 単一フィールド: 完全一致 (NOCASE)
+  const col = singleFieldColumn(tok.field);
+  if (!col) return null;
+  return { sql: `${col} = ? COLLATE NOCASE`, params: [v] };
+}
 
-  const sql = `${selectClause}
-    ${whereSql}
-    ORDER BY ${orderBy}
-    LIMIT ? OFFSET ?`;
-  params.push(limit, offset);
-  return db.prepare(sql).all<BookRowWithRead>(...params).map(rowToBookWithRead);
+function singleFieldColumn(field: string): string | null {
+  switch (field) {
+    case "writer":
+      return "ci.writer";
+    case "penciller":
+      return "ci.penciller";
+    case "series":
+      return "ci.series";
+    case "publisher":
+      return "ci.publisher";
+    case "imprint":
+      return "ci.imprint";
+    default:
+      return null;
+  }
 }
 
 function statusFilterClause(status: ReadStatusFilter): string | null {

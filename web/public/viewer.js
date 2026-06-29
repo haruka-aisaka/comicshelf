@@ -734,6 +734,16 @@ function alignToPair(n) {
  * series / 作者 / tags が無い場合は行ごと hidden。
  * タグは個別の chip にして、 クリックで一覧画面の検索に飛ばす。
  */
+/**
+ * `prefix:値` 形式の検索クエリ文字列。 値にスペース等が含まれる場合は
+ * 引用符で囲む。 app.js の同名関数とロジックを揃えている。
+ */
+function buildPrefixQuery(prefix, value) {
+  const needsQuote = /[\s"]/.test(value);
+  if (needsQuote) return `${prefix}:"${value.replace(/"/g, "")}"`;
+  return `${prefix}:${value}`;
+}
+
 function applyMetaPanel(comicInfo) {
   const panel = document.querySelector("#meta-panel");
   if (!panel) return;
@@ -755,8 +765,13 @@ function applyMetaPanel(comicInfo) {
       row.setAttribute("hidden", "");
     }
   };
-  /** クリックで一覧へ遷移して絞り込む chip を value 列に並べる */
-  const setChips = (field, values) => {
+  /**
+   * クリックで一覧へ遷移して絞り込む chip を value 列に並べる。
+   * @param {string} field meta-row の data-field 値 (UI 構造の識別子)
+   * @param {string} queryPrefix `?q=` に乗せる検索 prefix (series / writer / penciller)
+   * @param {string[]} values 表示する値
+   */
+  const setChips = (field, queryPrefix, values) => {
     const row = panel.querySelector(`.meta-row[data-field="${field}"]`);
     if (!row) return;
     const valueEl = row.querySelector(".meta-value");
@@ -770,18 +785,44 @@ function applyMetaPanel(comicInfo) {
     for (const v of arr) {
       const chip = document.createElement("a");
       chip.className = "meta-tag";
-      chip.href = `/?q=${encodeURIComponent(v)}`;
+      chip.href = `/?q=${encodeURIComponent(buildPrefixQuery(queryPrefix, v))}`;
       chip.textContent = v;
       valueEl.appendChild(chip);
     }
     row.removeAttribute("hidden");
   };
-  setChips("series", comicInfo.series ? [comicInfo.series] : []);
+  setChips("series", "series", comicInfo.series ? [comicInfo.series] : []);
   // 作者: writer 優先、 penciller が同名なら省く。 chip 化して一覧の絞り込みへリンク
+  // writer/penciller を区別したいので、 一旦 writer を全て writer: prefix、
+  // penciller を penciller: prefix で出す
   const writer = comicInfo.writer ?? "";
   const penciller = comicInfo.penciller ?? "";
-  const authors = penciller === writer ? [writer] : [writer, penciller];
-  setChips("author", authors);
+  // 作者行は data-field="author" なので、 同じ row 内に異なる prefix の chip を
+  // 並べる。 ここでは行 row の子要素として直接 anchor を組む
+  {
+    const row = panel.querySelector(`.meta-row[data-field="author"]`);
+    const valueEl = row?.querySelector(".meta-value");
+    if (row instanceof HTMLElement && valueEl instanceof HTMLElement) {
+      valueEl.innerHTML = "";
+      const entries = [];
+      if (writer) entries.push({ value: writer, prefix: "writer" });
+      if (penciller && penciller !== writer) {
+        entries.push({ value: penciller, prefix: "penciller" });
+      }
+      if (entries.length === 0) {
+        row.setAttribute("hidden", "");
+      } else {
+        for (const { value, prefix } of entries) {
+          const chip = document.createElement("a");
+          chip.className = "meta-tag";
+          chip.href = `/?q=${encodeURIComponent(buildPrefixQuery(prefix, value))}`;
+          chip.textContent = value;
+          valueEl.appendChild(chip);
+        }
+        row.removeAttribute("hidden");
+      }
+    }
+  }
 
   const tagsRow = panel.querySelector('.meta-row[data-field="tags"]');
   const tagsEl = panel.querySelector(".meta-tags");
@@ -792,7 +833,7 @@ function applyMetaPanel(comicInfo) {
       for (const tag of tags) {
         const chip = document.createElement("a");
         chip.className = "meta-tag";
-        chip.href = `/?q=${encodeURIComponent(tag)}`;
+        chip.href = `/?q=${encodeURIComponent(buildPrefixQuery("tag", tag))}`;
         chip.textContent = tag;
         tagsEl.appendChild(chip);
       }

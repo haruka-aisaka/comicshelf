@@ -452,6 +452,10 @@ details[open] > .dir-summary::before {
   cursor: pointer;
   border-bottom: 1px dotted transparent;
 }
+.card-pages {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
 .card-author-link:hover {
   color: var(--accent, #7aa2f7);
   border-bottom-color: currentColor;

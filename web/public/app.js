@@ -162,6 +162,18 @@ if (searchClearBtn) {
   });
 }
 
+/**
+ * `prefix:値` 形式の検索クエリ文字列を組み立てる。 値にスペースや引用符が
+ * 含まれる場合は引用符で囲み、 値内の `"` は同じ `"` に変換する (シンプル化)。
+ */
+function buildPrefixQuery(prefix, value) {
+  const needsQuote = /[\s"]/.test(value);
+  if (needsQuote) {
+    return `${prefix}:"${value.replace(/"/g, "")}"`;
+  }
+  return `${prefix}:${value}`;
+}
+
 async function refresh() {
   // /api/config を先に読んで roots を確定させてから directories を描画する
   await loadConfig();
@@ -570,22 +582,36 @@ function makeCard(book) {
   title.textContent = displayTitle;
   card.appendChild(title);
 
-  // 作者 (ComicInfo の writer or penciller があれば card 下部に小さく表示)
-  // クリックで現画面の検索バーに代入し、 在画面でその作者だけに絞り込む
+  // メタ行: 作者 (chip リンク) + ページ数 (テキスト)。
+  // 作者がない場合はページ数のみ。 pageCount が null/0 のときはページ数を非表示。
   const author = book.comicInfo?.writer ?? book.comicInfo?.penciller;
-  if (author) {
+  const authorField = book.comicInfo?.writer ? "writer" : "penciller";
+  const pageCount = typeof book.pageCount === "number" && book.pageCount > 0
+    ? book.pageCount
+    : null;
+  if (author || pageCount !== null) {
     const sub = document.createElement("div");
     sub.className = "card-author";
-    const link = document.createElement("a");
-    link.className = "card-author-link";
-    link.href = `/?q=${encodeURIComponent(author)}`;
-    link.textContent = author;
-    link.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      applyFilterByQuery(author);
-    });
-    sub.appendChild(link);
+    if (author) {
+      const link = document.createElement("a");
+      link.className = "card-author-link";
+      // chip タップは prefix 付き完全一致 URL を生成する
+      const q = buildPrefixQuery(authorField, author);
+      link.href = `/?q=${encodeURIComponent(q)}`;
+      link.textContent = author;
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        applyFilterByQuery(q);
+      });
+      sub.appendChild(link);
+    }
+    if (pageCount !== null) {
+      const pages = document.createElement("span");
+      pages.className = "card-pages";
+      pages.textContent = author ? ` ・ ${pageCount}p` : `${pageCount}p`;
+      sub.appendChild(pages);
+    }
     card.appendChild(sub);
   }
 

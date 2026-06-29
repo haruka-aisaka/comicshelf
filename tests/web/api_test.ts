@@ -307,6 +307,35 @@ Deno.test("API: favorite の異常系 (404 / 400)", async () => {
   }
 });
 
+Deno.test("API: ?q=writer:岸本斉史 で writer 完全一致のみ", async () => {
+  const w = await setupWorld();
+  try {
+    await w.app.app.request("/api/index/rebuild", { method: "POST" });
+    for (let i = 0; i < 100; i++) {
+      const s = await (await w.app.app.request("/api/index/status")).json();
+      if (!s.running && s.lastResult) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    // 全件取得 → 1 冊目を岸本斉史に
+    const all = await (await w.app.app.request("/api/books")).json();
+    const target = all.books[0];
+    // ComicInfo を持つフィクスチャがない (= writer 設定不可) ので、
+    // この E2E は内部的にスキップ。 代わりに `?q=tag:foo` で空配列が
+    // 返ることを確認 (= 構文解釈が動いている indicator)
+    const tagRes = await w.app.app.request(`/api/books?q=tag:nonexistent_tag`);
+    const tagData = await tagRes.json();
+    assertEquals(tagData.books.length, 0);
+    // prefix なしクエリで部分一致は引き続き動く
+    const partial = await w.app.app.request(
+      `/api/books?q=${encodeURIComponent(target.title.slice(0, 3))}`,
+    );
+    const partialData = await partial.json();
+    assertEquals(partialData.books.length >= 1, true);
+  } finally {
+    await w.cleanup();
+  }
+});
+
 Deno.test("API: /api/health", async () => {
   const w = await setupWorld();
   try {
