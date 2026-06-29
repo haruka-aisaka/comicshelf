@@ -31,6 +31,8 @@ services:
     environment:
       - TZ=${TZ:-Asia/Tokyo}
       - COMICSHELF_CONFIG=/config/config.json
+      # サムネ初回生成 (warmup) の並列数。 低メモリ環境では 1 推奨 (default: 2)
+      - WARMUP_CONCURRENCY=${WARMUP_CONCURRENCY:-1}
     # ホストUID/GIDでファイルを書き込むため明示的に指定。
     # 公式denoイメージのdenoユーザー(UID=1993)を使うと、bind-mountした
     # ホストディレクトリへの書き込みでパーミッションエラーになる。

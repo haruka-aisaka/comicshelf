@@ -21,6 +21,13 @@ import { generateThumbnailWebp } from "./reader/thumbnail.ts";
 export class LibraryService {
   private readonly pageCache: PageCache;
 
+  /** サムネ生成仕様。 変更したら自動的に既存キャッシュを破棄して再生成させるための識別子。 */
+  private static readonly THUMB_CACHE_SPEC = "max400-q80";
+  private static readonly THUMB_MAX_DIMENSION = 400;
+  private static readonly THUMB_QUALITY = 80;
+  /** spec チェックを 1 度だけ実行するためのメモ化 promise */
+  private thumbCacheReady: Promise<void> | null = null;
+
   constructor(private readonly db: Database, private readonly config: Config) {
     this.pageCache = new PageCache({
       baseDir: join(dirname(this.config.database.path), "cache", "pages"),
@@ -110,6 +117,8 @@ export class LibraryService {
   async getThumbnail(
     bookId: number,
   ): Promise<{ bytes: Uint8Array; contentType: string; mtime: number; cacheHit: boolean } | null> {
+    // 生成パラメータ (size/quality) が前回起動と変わっていたらキャッシュを破棄
+    await this.ensureThumbnailCacheSpec();
     const cacheDir = this.thumbnailCacheDir();
     // ヒット: webp優先、 後方互換で原本拡張子もチェック
     for (const ext of THUMB_CACHE_EXTS) {
@@ -157,7 +166,10 @@ export class LibraryService {
     let contentType: string;
     let ext: string;
     try {
-      bytes = await generateThumbnailWebp(page.bytes, { maxDimension: 600, quality: 82 });
+      bytes = await generateThumbnailWebp(page.bytes, {
+        maxDimension: LibraryService.THUMB_MAX_DIMENSION,
+        quality: LibraryService.THUMB_QUALITY,
+      });
       contentType = "image/webp";
       ext = ".webp";
     } catch (err) {
@@ -199,6 +211,40 @@ export class LibraryService {
 
   private thumbnailCacheDir(): string {
     return join(dirname(this.config.database.path), "thumbs");
+  }
+
+  /**
+   * 起動後初回のサムネ生成前に、 キャッシュディレクトリの spec マーカーを照合する。
+   * 生成パラメータ (`THUMB_CACHE_SPEC`) が前回と変わっていたら、 古い解像度の WebP が
+   * 残り続けるのを避けるためディレクトリごと wipe する。 メモ化して 1 度しか走らせない。
+   */
+  private ensureThumbnailCacheSpec(): Promise<void> {
+    if (this.thumbCacheReady) return this.thumbCacheReady;
+    this.thumbCacheReady = (async () => {
+      const dir = this.thumbnailCacheDir();
+      const markerPath = join(dir, ".spec");
+      try {
+        const cur = (await Deno.readTextFile(markerPath)).trim();
+        if (cur === LibraryService.THUMB_CACHE_SPEC) return;
+      } catch {
+        // マーカー無し → 新規 or 旧バージョン
+      }
+      // 既存ディレクトリがあれば中身を全消去 (なくても問題なし)。
+      // ディスク上のサムネ WebP を一掃して、 新仕様で順次再生成させる。
+      try {
+        await Deno.remove(dir, { recursive: true });
+      } catch { /* not exists */ }
+      try {
+        await Deno.mkdir(dir, { recursive: true });
+        await Deno.writeTextFile(markerPath, LibraryService.THUMB_CACHE_SPEC);
+        console.log(
+          `[thumbnail] cache spec changed → wiped and re-marked: ${LibraryService.THUMB_CACHE_SPEC}`,
+        );
+      } catch (err) {
+        console.warn(`[thumbnail] failed to write cache spec marker:`, err);
+      }
+    })();
+    return this.thumbCacheReady;
   }
 }
 

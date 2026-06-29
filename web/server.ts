@@ -20,7 +20,10 @@ export function buildApp(opts: {
   // orphan 警告: DB に居るが config.json に存在しない root_id があれば気付けるようにする
   warnOrphanRoots(db, config.library.roots.map((r) => r.id));
   const library = new LibraryService(db, config);
-  const indexer = new IndexerService(db, config, library);
+  // WARMUP_CONCURRENCY env で起動時サムネ並列数を制御。 Pi など低メモリ環境では
+  // 1 に絞ると ImageMagick の swap thrash を回避して結果的に速くなる。
+  const warmupConcurrency = parseWarmupConcurrency(Deno.env.get("WARMUP_CONCURRENCY"));
+  const indexer = new IndexerService(db, config, library, { warmupConcurrency });
   const app = new Hono();
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));
@@ -77,6 +80,14 @@ export function buildApp(opts: {
       db.close();
     },
   };
+}
+
+/** WARMUP_CONCURRENCY env を整数 (>=1) にパース。 不正値や未指定なら undefined (= IndexerService の既定値) */
+function parseWarmupConcurrency(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 1) return undefined;
+  return Math.floor(n);
 }
 
 function warnOrphanRoots(db: ReturnType<typeof openDatabase>, knownIds: string[]): void {
