@@ -819,10 +819,6 @@ if (menuToggle && scrim) {
     document.body.classList.remove("sidebar-open");
     menuToggle.setAttribute("aria-expanded", "false");
   };
-  const openDrawer = () => {
-    document.body.classList.add("sidebar-open");
-    menuToggle.setAttribute("aria-expanded", "true");
-  };
   menuToggle.addEventListener("click", () => {
     const isOpen = document.body.classList.toggle("sidebar-open");
     menuToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
@@ -835,64 +831,6 @@ if (menuToggle && scrim) {
     }
   });
 
-  // エッジスワイプでサイドバー開閉 (モバイル + PWA standalone のみ)
-  //  ブラウザ Safari では iOS の戻るスワイプ (左端) と衝突するため、
-  //  「ホーム画面に追加」 した PWA (standalone) のみで有効化する。
-  // - 閉じ状態: 左端 24px 以内から右へ 50px 以上スワイプ → 開く
-  // - 開き状態: 任意の位置から左へ 50px 以上スワイプ → 閉じる
-  // 縦方向の動きが優勢ならスクロール扱いで無効化
-  const EDGE_THRESHOLD = 24;
-  const TRIGGER_DISTANCE = 50;
-  /** @type {{x: number, y: number, openedAtStart: boolean}|null} */
-  let touchStart = null;
-
-  /** PWA standalone モードかどうか (iOS Safari / Chrome 共対応) */
-  const isStandalone = () =>
-    window.matchMedia("(display-mode: standalone)").matches ||
-    /** @type {{standalone?: boolean}} */ (window.navigator).standalone === true;
-
-  window.addEventListener("touchstart", (e) => {
-    if (!window.matchMedia("(max-width: 768px)").matches) return;
-    if (!isStandalone()) return;
-    if (e.touches.length !== 1) {
-      touchStart = null;
-      return;
-    }
-    const t = e.touches[0];
-    const isOpen = document.body.classList.contains("sidebar-open");
-    if (!isOpen && t.clientX > EDGE_THRESHOLD) {
-      // 開く方向のスワイプは左エッジから開始した時のみ受け付ける
-      touchStart = null;
-      return;
-    }
-    touchStart = { x: t.clientX, y: t.clientY, openedAtStart: isOpen };
-  }, { passive: true });
-
-  window.addEventListener("touchmove", (e) => {
-    if (!touchStart || e.touches.length !== 1) return;
-    const t = e.touches[0];
-    const dx = t.clientX - touchStart.x;
-    const dy = t.clientY - touchStart.y;
-    if (Math.abs(dy) > Math.abs(dx) * 1.2) {
-      // 縦方向の動きが優勢 → 通常スクロール扱い
-      touchStart = null;
-      return;
-    }
-    if (!touchStart.openedAtStart && dx > TRIGGER_DISTANCE) {
-      openDrawer();
-      touchStart = null;
-    } else if (touchStart.openedAtStart && dx < -TRIGGER_DISTANCE) {
-      closeDrawer();
-      touchStart = null;
-    }
-  }, { passive: true });
-
-  window.addEventListener("touchend", () => {
-    touchStart = null;
-  }, { passive: true });
-  window.addEventListener("touchcancel", () => {
-    touchStart = null;
-  }, { passive: true });
 }
 
 refresh().catch((e) => setStatus(`初期化失敗: ${e}`, "error"));
