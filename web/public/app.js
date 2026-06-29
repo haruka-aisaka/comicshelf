@@ -74,10 +74,15 @@ window.addEventListener("pageshow", (e) => {
   }
 });
 
-// PWA をバックグラウンドから戻した時にも、 入力欄の状態を URL に合わせる
+// PWA をバックグラウンドから戻した時にも、 入力欄の状態を URL に合わせる。
+// 加えて、 最後にサーバから取り直してから MAX_FRESHNESS_MS 以上経過していたら
+// サーバから再取得 (= 自動リロード)。 PWA standalone にはブラウザのリロードが
+// 無いため、 アプリ切り替えなどで戻ってきたタイミングで静かに最新化する。
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") {
-    reloadStateFromUrl();
+  if (document.visibilityState !== "visible") return;
+  reloadStateFromUrl();
+  if (Date.now() - lastRefreshAt > MAX_FRESHNESS_MS) {
+    refreshFromServer();
   }
 });
 
@@ -117,17 +122,24 @@ function findActiveDirLink() {
 
 /**
  * サーバから状態を取り直す (お気に入り / 既読など、 別画面で変わった可能性が
- * あるもの)。 BFCache 復元時に呼び出す。 grid を一旦置き換えるが、 scroll
- * 位置は維持される (loadBooks は window.scrollTo を呼ばない)。
+ * あるもの)。 BFCache 復元時 / バックグラウンド復帰時に呼び出す。 grid を一旦
+ * 置き換えるが、 scroll 位置は維持される (loadBooks は window.scrollTo を
+ * 呼ばない)。
  */
 async function refreshFromServer() {
   try {
     await loadConfig();
     await Promise.all([loadDirectories(), loadBooks(), loadSections()]);
+    lastRefreshAt = Date.now();
   } catch (e) {
     console.warn("refreshFromServer failed:", e);
   }
 }
+
+/** 最後にサーバから取り直した時刻 (ms)。 PWA をバックグラウンドから戻した時に
+ *  「最後の取得から MAX_FRESHNESS_MS 以上経っていれば自動再取得」 の判定に使う。 */
+let lastRefreshAt = Date.now();
+const MAX_FRESHNESS_MS = 60_000;
 
 sortSel.addEventListener("change", () => {
   state.sort = sortSel.value;
@@ -214,6 +226,7 @@ async function refresh() {
   await loadConfig();
   await Promise.all([loadDirectories(), loadBooks(), loadSections()]);
   restoreScroll();
+  lastRefreshAt = Date.now();
 }
 
 async function loadConfig() {
