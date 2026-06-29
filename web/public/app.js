@@ -81,6 +81,40 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+// スワイプバック / OS 戻るで URL が前状態に戻った時、 ページ全体を遷移させずに
+// 一覧 / セクションだけ差し替えて当該フィルタ状態を再現する。
+// writeQuery を呼ばない (= history を書き換えない) ことで、 同じ場所を行き来できる。
+window.addEventListener("popstate", () => {
+  reloadStateFromUrl();
+  // サイドバーのアクティブ表示を URL に合わせて再計算
+  document.querySelectorAll(".dir-link").forEach((el) => el.classList.remove("active"));
+  const activeLink = findActiveDirLink();
+  if (activeLink) activeLink.classList.add("active");
+  loadBooks();
+  loadSections();
+});
+
+/** 現在の state に対応するサイドバーリンクを返す (アクティブ表示の再計算用) */
+function findActiveDirLink() {
+  if (state.favorited) {
+    return document.querySelector('.dir-link[data-favorite="1"]');
+  }
+  if (state.rootId === "" && state.directory === "") {
+    return document.querySelector(
+      '.dir-link[data-dir=""]:not([data-root]):not([data-favorite])',
+    );
+  }
+  // root + directory の組み合わせで一致する link を探す
+  for (const el of document.querySelectorAll(".dir-link")) {
+    const link = /** @type {HTMLAnchorElement} */ (el);
+    if (link.dataset.favorite) continue;
+    if ((link.dataset.root ?? "") !== state.rootId) continue;
+    if ((link.dataset.dir ?? "") !== state.directory) continue;
+    return link;
+  }
+  return null;
+}
+
 /**
  * サーバから状態を取り直す (お気に入り / 既読など、 別画面で変わった可能性が
  * あるもの)。 BFCache 復元時に呼び出す。 grid を一旦置き換えるが、 scroll
@@ -153,7 +187,8 @@ if (searchClearBtn) {
     // q だけクリア (directory / status は保持)
     if (state.query !== "") {
       state.query = "";
-      writeQuery();
+      // 検索クリアは明示的な navigation: 戻る操作で検索状態に戻れるように push
+      writeQuery({ push: true });
       loadBooks();
       loadSections();
     }
@@ -438,7 +473,8 @@ function makeRootDirLinkAnchor(rootId, dir, label, count) {
     e.preventDefault();
     state.rootId = rootId ?? "";
     state.directory = dir;
-    writeQuery();
+    // サイドバーリンクは明示的な navigation: 履歴に積んで戻る操作で前状態に戻れるように
+    writeQuery({ push: true });
     document.querySelectorAll(".dir-link").forEach((el) => el.classList.remove("active"));
     a.classList.add("active");
     loadBooks();
@@ -501,7 +537,8 @@ if (clearFiltersBtn) {
       '.dir-link[data-dir=""]:not([data-root]):not([data-favorite])',
     );
     if (allLink) allLink.classList.add("active");
-    writeQuery();
+    // 「フィルタをクリア」 は明示的な navigation: 戻る操作で元の絞り込みに戻れるように
+    writeQuery({ push: true });
     loadBooks();
     loadSections();
   });
@@ -528,7 +565,8 @@ function applyFilterByQuery(q) {
     '.dir-link[data-dir=""]:not([data-root]):not([data-favorite])',
   );
   if (allLink) allLink.classList.add("active");
-  writeQuery();
+  // 作者チップ等の明示的な navigation: 履歴に積んで戻る操作で前状態に戻れるようにする
+  writeQuery({ push: true });
   loadBooks();
   loadSections();
   window.scrollTo({ top: 0, behavior: "instant" });
@@ -721,7 +759,8 @@ function makeFavoriteFilterAnchor(count) {
     if (searchInput) searchInput.value = "";
     document.querySelectorAll(".dir-link").forEach((el) => el.classList.remove("active"));
     a.classList.add("active");
-    writeQuery();
+    // ★ お気に入りタブも明示的な navigation: 履歴に積む
+    writeQuery({ push: true });
     loadBooks();
     loadSections();
   });
@@ -740,7 +779,14 @@ function readQuery() {
   };
 }
 
-function writeQuery() {
+/** state を URL クエリに反映。
+ *  @param {{ push?: boolean }} [opts]
+ *    push=true: history に新エントリを積む (= スワイプバック / OS 戻るで前状態に戻れる)。
+ *    省略 / false: replaceState (= 履歴を増やさず URL だけ書き換え)。
+ *    typing 中の検索やソート切替などは replace、 chip タップ / サイドバー / クリア等の
+ *    「明示的な navigation アクション」 では push を選ぶ。
+ */
+function writeQuery(opts = {}) {
   const q = new URLSearchParams();
   if (state.sort !== "title") q.set("sort", state.sort);
   if (state.rootId !== "") q.set("root", state.rootId);
@@ -749,7 +795,15 @@ function writeQuery() {
   if (state.status && state.status !== "all") q.set("status", state.status);
   if (state.query !== "") q.set("q", state.query);
   const qs = q.toString();
-  history.replaceState(null, "", qs ? `?${qs}` : location.pathname);
+  const nextRel = qs ? `${location.pathname}?${qs}` : location.pathname;
+  const currentRel = location.pathname + location.search;
+  // 同一 URL を push してもユーザーから見て意味なし (戻っても同じ画面) なので
+  // 同一なら常に replace に降格させる
+  if (opts.push && nextRel !== currentRel) {
+    history.pushState(null, "", nextRel);
+  } else {
+    history.replaceState(null, "", nextRel);
+  }
 }
 
 function setStatus(msg, kind = "") {
