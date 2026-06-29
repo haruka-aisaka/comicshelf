@@ -2,9 +2,18 @@ import { assertEquals } from "@std/assert";
 import { createAutoAdvance } from "../../web/public/lib/auto_advance.js";
 
 /** テスト用 fake: storage / setTimer / 仮想時間 / ページ状態 */
-function makeHarness(initial?: { storedSec?: string; totalPages?: number; currentPage?: number }) {
+function makeHarness(
+  initial?: {
+    storedSec?: string;
+    storedActive?: string;
+    totalPages?: number;
+    currentPage?: number;
+    useActiveStorageKey?: boolean;
+  },
+) {
   const storage = new Map<string, string>();
   if (initial?.storedSec) storage.set("k", initial.storedSec);
+  if (initial?.storedActive !== undefined) storage.set("k.active", initial.storedActive);
   let nowMs = 0;
   /** @type {Array<{ id: number, fn: () => void, ms: number }>} */
   const timers: { id: number; fn: () => void; ms: number }[] = [];
@@ -31,6 +40,7 @@ function makeHarness(initial?: { storedSec?: string; totalPages?: number; curren
       if (i >= 0) timers.splice(i, 1);
     },
     storageKey: "k",
+    activeStorageKey: initial?.useActiveStorageKey ? "k.active" : undefined,
     getCurrentPage: () => currentPage,
     getTotalPages: () => totalPages,
     moveForward: () => {
@@ -75,7 +85,7 @@ function makeHarness(initial?: { storedSec?: string; totalPages?: number; curren
   };
 }
 
-Deno.test("auto-advance: 起動時は常に userStopped=true (リロードしても)", () => {
+Deno.test("auto-advance: activeStorageKey なしなら起動時は常に userStopped=true", () => {
   const h = makeHarness({ storedSec: "5" });
   const auto = createAutoAdvance(h.deps);
   const s = auto.inspect();
@@ -83,6 +93,87 @@ Deno.test("auto-advance: 起動時は常に userStopped=true (リロードして
   assertEquals(s.userStopped, true);
   assertEquals(s.active, false);
   assertEquals(s.ticking, false);
+});
+
+Deno.test("auto-advance: activeStorageKey=\"true\" なら起動時に userStopped=false で復元", () => {
+  const h = makeHarness({
+    storedSec: "2",
+    storedActive: "true",
+    useActiveStorageKey: true,
+  });
+  const auto = createAutoAdvance(h.deps);
+  const s = auto.inspect();
+  assertEquals(s.userStopped, false);
+  assertEquals(s.active, true);
+  assertEquals(s.ticking, true);
+  // 2 秒経過で 1 回 advance する (= 復元後に正常に動く)
+  h.advance(2000);
+  assertEquals(h.getMoveForwardCalls(), 1);
+});
+
+Deno.test("auto-advance: activeStorageKey=\"false\" や未設定なら停止状態で復元", () => {
+  for (const v of ["false", "", "garbage", undefined]) {
+    const h = makeHarness({
+      storedSec: "2",
+      storedActive: v,
+      useActiveStorageKey: true,
+    });
+    const auto = createAutoAdvance(h.deps);
+    assertEquals(auto.inspect().userStopped, true, `value=${JSON.stringify(v)}`);
+  }
+});
+
+Deno.test("auto-advance: toggleUserStop が activeStorageKey に書き込む", () => {
+  const h = makeHarness({ useActiveStorageKey: true });
+  const auto = createAutoAdvance(h.deps);
+  // 初期: 停止 (キー未書き込み)
+  assertEquals(h.getStorage()["k.active"], undefined);
+  // 再開 → "true"
+  auto.toggleUserStop();
+  assertEquals(h.getStorage()["k.active"], "true");
+  // 停止 → "false"
+  auto.toggleUserStop();
+  assertEquals(h.getStorage()["k.active"], "false");
+});
+
+Deno.test("auto-advance: 末尾到達による stop() は activeStorageKey に書き込まない", () => {
+  const h = makeHarness({
+    totalPages: 3,
+    currentPage: 0,
+    storedActive: "true",
+    useActiveStorageKey: true,
+  });
+  const auto = createAutoAdvance(h.deps);
+  auto.setIntervalSec(1);
+  // 末尾まで進む (= 自動 stop() が走る)
+  h.advance(5000);
+  assertEquals(auto.inspect().userStopped, true);
+  // 永続化されている値は元のまま "true"
+  assertEquals(h.getStorage()["k.active"], "true");
+});
+
+Deno.test("auto-advance: 復元後の restart で totalPages 未確定なら確定後にカウント開始", () => {
+  // 起動時に totalPages=0 (未確定) でも、 確定後に正しくカウント開始する
+  const h = makeHarness({
+    storedSec: "2",
+    storedActive: "true",
+    useActiveStorageKey: true,
+    totalPages: 0,
+  });
+  const auto = createAutoAdvance(h.deps);
+  assertEquals(auto.inspect().active, true);
+  assertEquals(auto.inspect().ticking, true);
+  // totalPages 未確定で 5 秒経過しても advance は呼ばれない
+  h.advance(5000);
+  assertEquals(h.getMoveForwardCalls(), 0);
+  // totalPages を確定
+  h.setPages(0, 5);
+  // 次の tick で startedAt が確定する (= advance はまだ呼ばれない)
+  h.advance(100);
+  assertEquals(h.getMoveForwardCalls(), 0);
+  // そこから 2 秒で advance 1 回
+  h.advance(2000);
+  assertEquals(h.getMoveForwardCalls(), 1);
 });
 
 Deno.test("auto-advance: 不正な storedSec は MIN_INTERVAL_SEC に丸める", () => {

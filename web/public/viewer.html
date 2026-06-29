@@ -133,13 +133,16 @@
       hidden
     >
       <p id="finish-modal-title" class="finish-modal-title">最後のページです</p>
-      <p class="finish-modal-body">この本を既読にして閉じますか?</p>
+      <p class="finish-modal-body">この本を閉じますか?</p>
       <div class="finish-modal-actions">
+        <button type="button" id="finish-modal-confirm" class="finish-modal-confirm">
+          閉じる
+        </button>
+        <button type="button" id="finish-modal-favorite-confirm" class="finish-modal-confirm" hidden>
+          お気に入りに加えて閉じる
+        </button>
         <button type="button" id="finish-modal-cancel" class="finish-modal-cancel">
           キャンセル
-        </button>
-        <button type="button" id="finish-modal-confirm" class="finish-modal-confirm">
-          既読にして閉じる
         </button>
       </div>
     </div>

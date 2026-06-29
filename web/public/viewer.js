@@ -109,6 +109,7 @@ const AutoAdvance = createAutoAdvance({
   setTimer: (fn, ms) => setInterval(fn, ms),
   clearTimer: (id) => clearInterval(id),
   storageKey: "comicshelf.autoAdvanceSec",
+  activeStorageKey: "comicshelf.autoAdvanceActive",
   getCurrentPage: () => currentPage,
   getTotalPages: () => totalPages,
   getDirection: () => direction,
@@ -334,6 +335,13 @@ function bindEvents() {
       finishAndClose();
     });
   }
+  const finishModalFavConfirm = document.querySelector("#finish-modal-favorite-confirm");
+  if (finishModalFavConfirm instanceof HTMLElement) {
+    finishModalFavConfirm.addEventListener("click", () => {
+      hideFinishModal();
+      favoriteAndClose();
+    });
+  }
   const finishModalCancel = document.querySelector("#finish-modal-cancel");
   if (finishModalCancel instanceof HTMLElement) {
     finishModalCancel.addEventListener("click", () => hideFinishModal());
@@ -392,8 +400,9 @@ function bindEvents() {
   if (autoPauseBtn) {
     autoPauseBtn.addEventListener("click", () => AutoAdvance.toggleUserStop());
   }
-  // 本を開いた直後 / リロード後は常に「停止」 状態から (userStopped 初期値 true)。
-  // 設定値 (intervalSec) は localStorage から復元される。
+  // intervalSec と「動作中」 状態は localStorage から復元される (auto_advance.js 側)。
+  // 「動作中」 復元時は createAutoAdvance 内で restart() が呼ばれているため、
+  // ここでは UI 反映だけ。
   AutoAdvance.updateUi();
 
   // タブが背景に回った時は pause、 戻ったら resume
@@ -1096,11 +1105,19 @@ function hideMenuOverlay() {
   AutoAdvance.setSystemPaused(false);
 }
 
-/** 最終ページで「次へ」操作した時に出す既読化モーダル */
+/** 最終ページで「次へ」操作した時に出す既読化モーダル
+ *  - 未お気に入りなら「お気に入りに加えて閉じる」 ボタンも表示
+ *  - お気に入り済みなら隠す (重複動線を避ける)
+ */
 function showFinishModal() {
   const modal = document.querySelector("#finish-modal");
   const backdrop = document.querySelector("#finish-modal-backdrop");
   if (!(modal instanceof HTMLElement) || !(backdrop instanceof HTMLElement)) return;
+  const favBtn = modal.querySelector("#finish-modal-favorite-confirm");
+  if (favBtn instanceof HTMLElement) {
+    if (favoritedState) favBtn.setAttribute("hidden", "");
+    else favBtn.removeAttribute("hidden");
+  }
   modal.removeAttribute("hidden");
   backdrop.removeAttribute("hidden");
   AutoAdvance.setSystemPaused(true);
@@ -1285,6 +1302,32 @@ async function finishAndClose() {
     });
   } catch (e) {
     console.warn("既読化失敗", e);
+  }
+  location.href = "/";
+}
+
+/** お気に入りに加えて閉じる: favorite + progress を並列で送ってからトップへ */
+async function favoriteAndClose() {
+  if (saveTimer !== null) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  const last = totalPages > 0 ? totalPages - 1 : currentPage;
+  // 並列実行: 片方が失敗しても他方の処理は完了させる
+  const results = await Promise.allSettled([
+    fetch(`/api/books/${bookId}/favorite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ favorited: true }),
+    }),
+    fetch(`/api/books/${bookId}/progress`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ lastPage: last, finished: true }),
+    }),
+  ]);
+  for (const r of results) {
+    if (r.status === "rejected") console.warn("お気に入り/既読化の送信失敗", r.reason);
   }
   location.href = "/";
 }

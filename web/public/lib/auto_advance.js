@@ -35,6 +35,7 @@ import { clampInterval, formatIntervalLabel, MIN_INTERVAL_SEC } from "./viewer_u
  * @property {(fn: () => void, ms: number) => number} setTimer
  * @property {(id: number) => void} clearTimer
  * @property {string} storageKey
+ * @property {string} [activeStorageKey] active(動作中)フラグの永続化キー (省略時は永続化しない)
  * @property {() => number} getCurrentPage
  * @property {() => number} getTotalPages
  * @property {() => string} [getDirection]
@@ -52,6 +53,7 @@ export function createAutoAdvance(deps) {
     setTimer,
     clearTimer,
     storageKey,
+    activeStorageKey,
     getCurrentPage,
     getTotalPages,
     getDirection = () => "ltr",
@@ -59,12 +61,18 @@ export function createAutoAdvance(deps) {
     ui = {},
   } = deps;
 
+  // activeStorageKey が指定されていれば前回の「動作中」 フラグを復元。
+  // 値が "true" の場合のみ動作中で起動、 それ以外 (未設定/不正値含む) は停止。
+  const restoredActive = activeStorageKey
+    ? storage.getItem(activeStorageKey) === "true"
+    : false;
+
   const state = {
     /** 設定値 (常に >= MIN_INTERVAL_SEC)。 永続化する */
     intervalSec: clampInterval(Number(storage.getItem(storageKey) ?? String(MIN_INTERVAL_SEC))),
     startedAt: 0,
-    /** ユーザーが「停止」 状態にしているか。 永続化しない (起動時は常に true)。 */
-    userStopped: true,
+    /** ユーザーが「停止」 状態にしているか。 activeStorageKey 経由で前回状態を復元可能。 */
+    userStopped: !restoredActive,
     /** メニュー表示や非アクティブで強制 pause か */
     systemPaused: false,
     /** auto-advance 由来の moveForward 中か (jumpTo の reset 抑制用) */
@@ -89,6 +97,13 @@ export function createAutoAdvance(deps) {
 
   function tick() {
     if (!isActive() || getTotalPages() <= 0) return;
+    // restart() が totalPages 未確定時に呼ばれた場合、 確定したこのタイミングで
+    // カウント開始する (これがないと restart→確定までの待ち時間が経過扱いになる)。
+    if (state.startedAt === -1) {
+      state.startedAt = now();
+      updateBar(0);
+      return;
+    }
     const elapsedMs = now() - state.startedAt;
     const totalMs = state.intervalSec * 1000;
     const ratio = Math.min(1, elapsedMs / totalMs);
@@ -110,6 +125,13 @@ export function createAutoAdvance(deps) {
   /** タイマーを再スタート (手動ページ操作後 / 設定変更後) */
   function restart() {
     if (!isActive()) return;
+    // totalPages 未確定でも tick を回しておく (= 確定後すぐカウント開始する)。
+    // startedAt=-1 をセンチネルにして tick 側が「確定したらカウント開始」 と認識する。
+    if (getTotalPages() <= 0) {
+      state.startedAt = -1;
+      startTick();
+      return;
+    }
     state.startedAt = now();
     startTick();
     updateBar(0);
@@ -134,6 +156,10 @@ export function createAutoAdvance(deps) {
 
   function toggleUserStop() {
     state.userStopped = !state.userStopped;
+    // ユーザー操作起点のみ永続化 (= 終端到達による自動 stop は永続化対象外)
+    if (activeStorageKey) {
+      storage.setItem(activeStorageKey, state.userStopped ? "false" : "true");
+    }
     if (state.userStopped) {
       stopTick();
       state.startedAt = 0;
@@ -198,6 +224,12 @@ export function createAutoAdvance(deps) {
         ? Math.min(1, (now() - state.startedAt) / (state.intervalSec * 1000))
         : 0,
     );
+  }
+
+  // 永続化された「動作中」 状態を復元: restart() を呼んで tick を起動する。
+  // totalPages 未確定でも restart() 内で安全にハンドルされる。
+  if (!state.userStopped) {
+    restart();
   }
 
   return {

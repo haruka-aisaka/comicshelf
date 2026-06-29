@@ -1523,17 +1523,20 @@ details[open] > .dir-summary::before {
 }
 .finish-modal-actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
   margin-top: 4px;
 }
 .finish-modal-cancel,
 .finish-modal-confirm {
-  min-width: 96px;
-  padding: 8px 14px;
+  width: 100%;
+  padding: 10px 14px;
   font-size: 14px;
   border-radius: 6px;
   cursor: pointer;
+}
+.finish-modal-confirm[hidden] {
+  display: none;
 }
 .finish-modal-cancel {
   background: transparent;
