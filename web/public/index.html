@@ -51,35 +51,56 @@
             </button>
           </span>
         </label>
-        <label class="sort-label">
-          <span class="sr-label">フィルタ</span>
-          <select id="status-filter">
-            <option value="all">すべて</option>
-            <option value="not_finished">読了前のみ</option>
-            <option value="unread">未着手</option>
-            <option value="reading">読書中</option>
-            <option value="finished">読了</option>
-          </select>
-        </label>
-        <label class="sort-label">
-          <span class="sr-label">ソート</span>
-          <select id="sort">
-            <option value="title">タイトル順</option>
-            <option value="modified">更新日時 (新しい順)</option>
-            <option value="added">追加日時 (新しい順)</option>
-            <option value="unread">未読優先</option>
-            <option value="favorited">お気に入り優先</option>
-          </select>
-        </label>
-        <label class="favorite-toggle" title="お気に入りのみ表示">
-          <input id="favorited-filter" type="checkbox">
-          <span class="favorite-toggle-icon" aria-hidden="true">★</span>
-          <span class="sr-label">お気に入りのみ</span>
-        </label>
+        <button
+          id="filter-toggle"
+          class="filter-toggle"
+          type="button"
+          aria-label="絞り込み"
+          aria-expanded="false"
+          aria-haspopup="dialog"
+          title="絞り込み"
+        >
+          <span class="filter-toggle-icon" aria-hidden="true">▼</span>
+          <span class="filter-toggle-label">絞り込み</span>
+        </button>
         <a href="/settings.html" class="icon-btn" aria-label="設定" title="設定">⚙</a>
         <span id="status" class="status"></span>
       </div>
     </header>
+
+    <!-- 絞り込みポップオーバー (status / sort / お気に入り / リセット) -->
+    <div id="filter-popover-backdrop" class="filter-popover-backdrop" hidden></div>
+    <div id="filter-popover" class="filter-popover" role="dialog" aria-label="絞り込み" hidden>
+      <label class="filter-popover-row">
+        <span class="filter-popover-label">表示</span>
+        <select id="status-filter">
+          <option value="all">すべて</option>
+          <option value="not_finished">読了前のみ</option>
+          <option value="unread">未着手</option>
+          <option value="reading">読書中</option>
+          <option value="finished">読了</option>
+        </select>
+      </label>
+      <label class="filter-popover-row">
+        <span class="filter-popover-label">並び順</span>
+        <select id="sort">
+          <option value="title">タイトル順</option>
+          <option value="modified">更新日時 (新しい順)</option>
+          <option value="added">追加日時 (新しい順)</option>
+          <option value="unread">未読優先</option>
+          <option value="favorited">お気に入り優先</option>
+        </select>
+      </label>
+      <label class="filter-popover-row filter-popover-favorite">
+        <input id="favorited-filter" type="checkbox">
+        <span class="favorite-toggle-icon" aria-hidden="true">★</span>
+        <span>お気に入りのみ表示</span>
+      </label>
+      <div class="filter-popover-sep"></div>
+      <button id="filter-reset" type="button" class="filter-popover-reset">
+        すべてリセット
+      </button>
+    </div>
 
     <main class="main">
       <aside class="sidebar" id="sidebar">

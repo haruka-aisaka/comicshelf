@@ -58,6 +58,7 @@ function reloadStateFromUrl() {
   state.favorited = q.favorited;
   state.query = q.query;
   syncFormFromState();
+  updateFilterToggleActive();
 }
 
 // BFCache 復元時にフォームを URL から再同期 (iOS Safari で input.value が
@@ -144,12 +145,14 @@ const MAX_FRESHNESS_MS = 60_000;
 sortSel.addEventListener("change", () => {
   state.sort = sortSel.value;
   writeQuery();
+  updateFilterToggleActive();
   refresh();
 });
 if (filterSel) {
   filterSel.addEventListener("change", () => {
     state.status = filterSel.value;
     writeQuery();
+    updateFilterToggleActive();
     loadBooks();
     loadSections();
   });
@@ -158,6 +161,7 @@ if (favoritedFilter) {
   favoritedFilter.addEventListener("change", () => {
     state.favorited = favoritedFilter.checked;
     writeQuery();
+    updateFilterToggleActive();
     loadBooks();
     loadSections();
   });
@@ -206,6 +210,98 @@ if (searchClearBtn) {
     }
     // 続けて入力できるようフォーカスを残す
     searchInput.focus();
+  });
+}
+
+/* ---------- 絞り込みポップオーバー ---------- */
+const filterToggle = /** @type {HTMLButtonElement|null} */ (
+  document.querySelector("#filter-toggle")
+);
+const filterPopover = /** @type {HTMLElement|null} */ (
+  document.querySelector("#filter-popover")
+);
+const filterBackdrop = /** @type {HTMLElement|null} */ (
+  document.querySelector("#filter-popover-backdrop")
+);
+const filterResetBtn = /** @type {HTMLButtonElement|null} */ (
+  document.querySelector("#filter-reset")
+);
+
+function isFilterPopoverOpen() {
+  return filterPopover instanceof HTMLElement && !filterPopover.hasAttribute("hidden");
+}
+
+function openFilterPopover() {
+  if (!filterPopover || !filterBackdrop || !filterToggle) return;
+  // サイドバーが開いていれば閉じる (両方同時に開かない)
+  if (document.body.classList.contains("sidebar-open")) {
+    document.body.classList.remove("sidebar-open");
+    const menuToggleBtn = document.querySelector("#menu-toggle");
+    menuToggleBtn?.setAttribute("aria-expanded", "false");
+  }
+  filterPopover.removeAttribute("hidden");
+  filterBackdrop.removeAttribute("hidden");
+  filterToggle.setAttribute("aria-expanded", "true");
+}
+
+function closeFilterPopover() {
+  if (!filterPopover || !filterBackdrop || !filterToggle) return;
+  filterPopover.setAttribute("hidden", "");
+  filterBackdrop.setAttribute("hidden", "");
+  filterToggle.setAttribute("aria-expanded", "false");
+}
+
+/** 何らかの絞り込みが有効か (= default 以外) */
+function isAnyFilterActive() {
+  return state.status !== "all" || state.sort !== "title" || state.favorited === true;
+}
+
+function updateFilterToggleActive() {
+  if (!filterToggle) return;
+  filterToggle.classList.toggle("is-active", isAnyFilterActive());
+}
+
+if (filterToggle) {
+  filterToggle.addEventListener("click", () => {
+    if (isFilterPopoverOpen()) closeFilterPopover();
+    else openFilterPopover();
+  });
+}
+if (filterBackdrop) {
+  filterBackdrop.addEventListener("click", () => closeFilterPopover());
+}
+// Esc で閉じる (絞り込みポップオーバー優先、 次にサイドバー)
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && isFilterPopoverOpen()) closeFilterPopover();
+});
+
+if (filterResetBtn) {
+  filterResetBtn.addEventListener("click", () => {
+    // default 値に戻す: query は触らない (フリーテキスト検索は残す)
+    let changed = false;
+    if (state.status !== "all") {
+      state.status = "all";
+      if (filterSel) filterSel.value = "all";
+      changed = true;
+    }
+    if (state.sort !== "title") {
+      state.sort = "title";
+      sortSel.value = "title";
+      changed = true;
+    }
+    if (state.favorited) {
+      state.favorited = false;
+      if (favoritedFilter) favoritedFilter.checked = false;
+      changed = true;
+    }
+    if (changed) {
+      // 明示的な navigation: 戻る操作で元の絞り込みに戻せるように pushState
+      writeQuery({ push: true });
+      loadBooks();
+      loadSections();
+    }
+    updateFilterToggleActive();
+    closeFilterPopover();
   });
 }
 
@@ -552,6 +648,7 @@ if (clearFiltersBtn) {
     if (allLink) allLink.classList.add("active");
     // 「フィルタをクリア」 は明示的な navigation: 戻る操作で元の絞り込みに戻れるように
     writeQuery({ push: true });
+    updateFilterToggleActive();
     loadBooks();
     loadSections();
   });
@@ -580,6 +677,7 @@ function applyFilterByQuery(q) {
   if (allLink) allLink.classList.add("active");
   // 作者チップ等の明示的な navigation: 履歴に積んで戻る操作で前状態に戻れるようにする
   writeQuery({ push: true });
+  updateFilterToggleActive();
   loadBooks();
   loadSections();
   window.scrollTo({ top: 0, behavior: "instant" });
@@ -774,6 +872,7 @@ function makeFavoriteFilterAnchor(count) {
     a.classList.add("active");
     // ★ お気に入りタブも明示的な navigation: 履歴に積む
     writeQuery({ push: true });
+    updateFilterToggleActive();
     loadBooks();
     loadSections();
   });
@@ -846,6 +945,7 @@ if (menuToggle && scrim) {
 
 }
 
+updateFilterToggleActive();
 refresh().catch((e) => setStatus(`初期化失敗: ${e}`, "error"));
 
 // Service Worker 登録は entry script ごとに重複しないよう sw-register.js に切り出し
