@@ -105,7 +105,29 @@
         </button>
       </div>
       <div class="menu-row">
-        <button id="finish-and-close" type="button" class="finish-btn">
+        <button id="finish-and-close" type="button" class="finish-btn" hidden>
+          既読にして閉じる
+        </button>
+      </div>
+    </div>
+
+    <!-- 最終ページで「次へ」操作した時の既読化モーダル -->
+    <div id="finish-modal-backdrop" class="finish-modal-backdrop" hidden></div>
+    <div
+      id="finish-modal"
+      class="finish-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="finish-modal-title"
+      hidden
+    >
+      <p id="finish-modal-title" class="finish-modal-title">最後のページです</p>
+      <p class="finish-modal-body">この本を既読にして閉じますか?</p>
+      <div class="finish-modal-actions">
+        <button type="button" id="finish-modal-cancel" class="finish-modal-cancel">
+          キャンセル
+        </button>
+        <button type="button" id="finish-modal-confirm" class="finish-modal-confirm">
           既読にして閉じる
         </button>
       </div>

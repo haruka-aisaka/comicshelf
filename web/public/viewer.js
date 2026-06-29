@@ -62,6 +62,8 @@ let currentPage = Number(params.get("page") ?? "0");
 let totalPages = -1;
 let saveTimer = null;
 let pagesReady = null;
+/** 既読 (finished=true) か。 既読本は途中位置を保存せず、 再度開いた時に先頭から始める */
+let finishedState = false;
 
 const prefetched = new Map();
 const PREFETCH_RADIUS = 2;
@@ -179,12 +181,16 @@ async function init() {
     }
   }
 
-  if (!params.has("page") && bookData.readState?.lastPage >= 0) {
+  finishedState = bookData.readState?.finished === true;
+  // 既読本は先頭から開く (lastPage は読了時の値のまま DB に保持される)。
+  // ?page=N で明示指定された場合は従来通りその位置から。
+  if (!params.has("page") && !finishedState && bookData.readState?.lastPage >= 0) {
     currentPage = bookData.readState.lastPage;
   }
   if (currentPage > 0) {
     indicator.textContent = `${currentPage + 1} / …`;
   }
+  applyReadStateUi();
 
   pagesReady.then((pagesData) => {
     totalPages = pagesData.pages.length;
@@ -300,7 +306,27 @@ function bindEvents() {
   // (旧 settings-toggle / settings-panel は menu-overlay に統合済み)
 
   if (finishBtn) {
-    finishBtn.addEventListener("click", finishAndClose);
+    finishBtn.addEventListener("click", () => {
+      if (finishedState) confirmAndResetToUnread();
+      else finishAndClose();
+    });
+  }
+
+  // 最終ページ既読化モーダルのボタン / backdrop
+  const finishModalConfirm = document.querySelector("#finish-modal-confirm");
+  if (finishModalConfirm instanceof HTMLElement) {
+    finishModalConfirm.addEventListener("click", () => {
+      hideFinishModal();
+      finishAndClose();
+    });
+  }
+  const finishModalCancel = document.querySelector("#finish-modal-cancel");
+  if (finishModalCancel instanceof HTMLElement) {
+    finishModalCancel.addEventListener("click", () => hideFinishModal());
+  }
+  const finishModalBackdrop = document.querySelector("#finish-modal-backdrop");
+  if (finishModalBackdrop instanceof HTMLElement) {
+    finishModalBackdrop.addEventListener("click", () => hideFinishModal());
   }
 
   // シーク: ユーザーが任意のpage indexを指定するので alignToPair は外す。
@@ -385,7 +411,8 @@ function bindEvents() {
         if (totalPages > 0) jumpTo(totalPages - 1);
         break;
       case "Escape":
-        hideMenuOverlay();
+        if (isFinishModalOpen()) hideFinishModal();
+        else hideMenuOverlay();
         break;
     }
   });
@@ -696,7 +723,19 @@ function resetZoom() {
 }
 
 /** ---------- ページ移動 ---------- */
+function isAtLastPage() {
+  if (totalPages <= 0) return false;
+  const indices = pageIndicesToShow();
+  return indices[indices.length - 1] >= totalPages - 1;
+}
+
 function moveForward() {
+  // 末尾突破: 既読化モーダルを出す。 既読本でも閉じる動線として同じモーダルを再利用
+  // (idempotent な再 finish 送信 → トップ遷移)。 閉じる手間を減らす目的。
+  if (isAtLastPage()) {
+    showFinishModal();
+    return;
+  }
   if (!spreadCb.checked) {
     jumpTo(currentPage + 1);
     return;
@@ -870,6 +909,7 @@ function jumpTo(n, opts = {}) {
   scheduleSave();
   prefetchAround(currentPage);
   syncSeekUi();
+  applyReadStateUi();
   AutoAdvance.onUserPageChange();
 }
 
@@ -1041,6 +1081,53 @@ function hideMenuOverlay() {
   AutoAdvance.setSystemPaused(false);
 }
 
+/** 最終ページで「次へ」操作した時に出す既読化モーダル */
+function showFinishModal() {
+  const modal = document.querySelector("#finish-modal");
+  const backdrop = document.querySelector("#finish-modal-backdrop");
+  if (!(modal instanceof HTMLElement) || !(backdrop instanceof HTMLElement)) return;
+  modal.removeAttribute("hidden");
+  backdrop.removeAttribute("hidden");
+  AutoAdvance.setSystemPaused(true);
+  const confirmBtn = /** @type {HTMLElement|null} */ (
+    modal.querySelector("#finish-modal-confirm")
+  );
+  confirmBtn?.focus();
+}
+
+function hideFinishModal() {
+  const modal = document.querySelector("#finish-modal");
+  const backdrop = document.querySelector("#finish-modal-backdrop");
+  if (modal instanceof HTMLElement) modal.setAttribute("hidden", "");
+  if (backdrop instanceof HTMLElement) backdrop.setAttribute("hidden", "");
+  AutoAdvance.setSystemPaused(false);
+}
+
+function isFinishModalOpen() {
+  const modal = document.querySelector("#finish-modal");
+  return modal instanceof HTMLElement && !modal.hasAttribute("hidden");
+}
+
+/** 読書状態に応じてメニュー下部のボタンを出し分け
+ *  - 未読 (lastPage=0 かつ未読了): 非表示
+ *  - 読書中: 「既読にして閉じる」
+ *  - 既読: 「未読に戻す」
+ */
+function applyReadStateUi() {
+  if (!finishBtn) return;
+  if (finishedState) {
+    finishBtn.textContent = "未読に戻す";
+    finishBtn.classList.add("is-reset");
+    finishBtn.removeAttribute("hidden");
+  } else if (currentPage > 0) {
+    finishBtn.textContent = "既読にして閉じる";
+    finishBtn.classList.remove("is-reset");
+    finishBtn.removeAttribute("hidden");
+  } else {
+    finishBtn.setAttribute("hidden", "");
+  }
+}
+
 function syncSeekUi() {
   if (totalPages > 0) {
     seekBar.value = String(currentPage);
@@ -1055,22 +1142,20 @@ function scheduleSave() {
 }
 
 async function saveProgress() {
-  const finished = totalPages > 0 && currentPage >= totalPages - 1;
+  // 既読本では再読中の途中位置を保存しない (毎回先頭から開けるように lastPage を凍結)
+  if (finishedState) return;
   try {
     await fetch(`/api/books/${bookId}/progress`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ lastPage: currentPage, finished }),
+      body: JSON.stringify({ lastPage: currentPage }),
     });
   } catch (e) {
-    console.warn("既読保存に失敗", e);
+    console.warn("進捗保存に失敗", e);
   }
 }
 
 async function finishAndClose() {
-  // 直前にschedule された saveProgress (finished:false の可能性) があれば
-  // キャンセルしてから finished:true を送る。 そうしないとnavigation中に
-  // 古いタイマーが発火して既読化を上書きする race が起きる。
   if (saveTimer !== null) {
     clearTimeout(saveTimer);
     saveTimer = null;
@@ -1087,6 +1172,37 @@ async function finishAndClose() {
     console.warn("既読化失敗", e);
   }
   location.href = "/";
+}
+
+/** 未読に戻す: 確認ダイアログを経て lastPage=0 / finished=false で保存し、 ビューワー先頭から再開 */
+async function confirmAndResetToUnread() {
+  if (!confirm("この本を未読に戻しますか? 読書位置の記録はリセットされます。")) return;
+  if (saveTimer !== null) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  try {
+    const res = await fetch(`/api/books/${bookId}/progress`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ lastPage: 0, finished: false }),
+    });
+    if (!res.ok) throw new Error("progress reset failed");
+  } catch (e) {
+    console.warn("未読化失敗", e);
+    alert("未読に戻す処理に失敗しました");
+    return;
+  }
+  finishedState = false;
+  if (currentPage !== 0) {
+    currentPage = 0;
+    resetZoom();
+    if (totalPages > 0) render();
+    syncSeekUi();
+    prefetchAround(currentPage);
+  }
+  applyReadStateUi();
+  hideMenuOverlay();
 }
 
 /* ---------- お気に入り ---------- */

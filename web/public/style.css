@@ -1401,6 +1401,91 @@ details[open] > .dir-summary::before {
   background: var(--accent);
   color: #0f1115;
 }
+.finish-btn[hidden] {
+  display: none;
+}
+/* 既読時の「未読に戻す」表示: 破壊的操作なので赤系の控えめな色味で出し分け */
+.finish-btn.is-reset {
+  border-color: #c66;
+  color: #d88;
+}
+.finish-btn.is-reset:hover {
+  background: #c66;
+  color: #0f1115;
+}
+
+/* ---------- 最終ページ既読化モーダル ---------- */
+.finish-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 60;
+}
+.finish-modal-backdrop[hidden] {
+  display: none;
+}
+.finish-modal {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(92vw, 360px);
+  background: var(--surface-1, #1a1d24);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 20px 16px;
+  z-index: 61;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.finish-modal[hidden] {
+  display: none;
+}
+.finish-modal-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg, #e6e8eb);
+}
+.finish-modal-body {
+  margin: 0;
+  font-size: 14px;
+  color: var(--fg-muted, #b8bcc4);
+  line-height: 1.5;
+}
+.finish-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+.finish-modal-cancel,
+.finish-modal-confirm {
+  min-width: 96px;
+  padding: 8px 14px;
+  font-size: 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.finish-modal-cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg, #e6e8eb);
+}
+.finish-modal-cancel:hover {
+  background: var(--surface-2);
+}
+.finish-modal-confirm {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #0f1115;
+  font-weight: 600;
+}
+.finish-modal-confirm:hover {
+  filter: brightness(1.1);
+}
 /* ビューワーのメニューシート内お気に入りトグル */
 .meta-favorite {
   padding: 4px 0;
