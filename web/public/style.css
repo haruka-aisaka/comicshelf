@@ -1539,8 +1539,11 @@ details[open] > .dir-summary::before {
   display: none;
 }
 
-/* お気に入りに加えて閉じる: ゴールド系の特別感のあるボタン */
-.finish-modal-favorite {
+/* お気に入りに加えて閉じる: ゴールド系の特別感のあるボタン。
+   .finish-modal-confirm と class 数が同じだとあとに定義された .finish-modal-confirm
+   の background/color に上書きされるため、 セレクタを多重化してスペシフィシティを
+   上げる (順序非依存にする)。 */
+.finish-modal-confirm.finish-modal-favorite {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1552,11 +1555,11 @@ details[open] > .dir-summary::before {
   letter-spacing: 0.5px;
   box-shadow: 0 2px 10px rgba(255, 180, 60, 0.25);
 }
-.finish-modal-favorite:hover {
+.finish-modal-confirm.finish-modal-favorite:hover {
   filter: brightness(1.05);
   box-shadow: 0 4px 14px rgba(255, 180, 60, 0.35);
 }
-.finish-modal-favorite:active {
+.finish-modal-confirm.finish-modal-favorite:active {
   filter: brightness(0.95);
   box-shadow: 0 1px 4px rgba(255, 180, 60, 0.2);
 }
