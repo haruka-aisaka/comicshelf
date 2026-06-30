@@ -267,13 +267,7 @@ function bindEvents() {
   if (backLink) {
     backLink.addEventListener("click", (e) => {
       e.preventDefault();
-      const sameOriginReferrer = document.referrer &&
-        new URL(document.referrer).origin === location.origin;
-      if (history.length > 1 && sameOriginReferrer) {
-        history.back();
-      } else {
-        location.href = "/index.html";
-      }
+      goBackToList();
     });
   }
   if (spreadModeSel) {
@@ -1105,6 +1099,19 @@ function hideMenuOverlay() {
   AutoAdvance.setSystemPaused(false);
 }
 
+/** 一覧画面に戻る。 履歴があれば history.back で一覧側の絞り込み / 検索 /
+ *  スクロール位置を保持。 履歴が無い (= viewer の URL を直接開いたケース) なら
+ *  /index.html にフォールバック (この場合は元の URL 状態は復元できない)。 */
+function goBackToList() {
+  const sameOriginReferrer = document.referrer &&
+    new URL(document.referrer).origin === location.origin;
+  if (history.length > 1 && sameOriginReferrer) {
+    history.back();
+  } else {
+    location.href = "/index.html";
+  }
+}
+
 /** 最終ページで「次へ」操作した時に出す既読化モーダル
  *  - 「お気に入りに加えて閉じる」 ボタンは常に表示するが、 既にお気に入り済みなら
  *    disabled にして押せないようにする (動線として残しつつ重複操作を防ぐ)
@@ -1302,7 +1309,7 @@ async function finishAndClose() {
   } catch (e) {
     console.warn("既読化失敗", e);
   }
-  location.href = "/";
+  goBackToList();
 }
 
 /** お気に入りに加えて閉じる: favorite + progress を並列で送ってからトップへ */
@@ -1328,7 +1335,7 @@ async function favoriteAndClose() {
   for (const r of results) {
     if (r.status === "rejected") console.warn("お気に入り/既読化の送信失敗", r.reason);
   }
-  location.href = "/";
+  goBackToList();
 }
 
 /** 未読に戻す: 確認ダイアログを経て lastPage=0 / finished=false で保存し、 ビューワー先頭から再開 */
