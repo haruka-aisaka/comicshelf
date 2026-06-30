@@ -950,7 +950,12 @@ details[open] > .dir-summary::before {
 /* ---------- 絞り込みポップオーバー ---------- */
 .filter-popover-backdrop {
   position: fixed;
-  inset: 0;
+  /* トップバーは常に操作可能にしたいので、 backdrop はトップバー高さ分だけ下から覆う。
+     これで popover open 中も ☰ / 検索 / ▼ / ⚙ ボタンを直接クリックできる。 */
+  top: calc(var(--topbar-h) + var(--safe-top));
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: transparent;
   z-index: 45;
 }
@@ -1850,7 +1855,11 @@ details[open] > .dir-summary::before {
   .sidebar-scrim {
     display: block;
     position: fixed;
-    inset: 0;
+    /* トップバーは常に操作可能にする (backdrop と同じ理由)。 */
+    top: calc(var(--topbar-h) + var(--safe-top));
+    left: 0;
+    right: 0;
+    bottom: 0;
     background: rgba(0, 0, 0, 0.5);
     opacity: 0;
     pointer-events: none;

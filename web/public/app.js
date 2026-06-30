@@ -934,6 +934,8 @@ if (menuToggle && scrim) {
   menuToggle.addEventListener("click", () => {
     const isOpen = document.body.classList.toggle("sidebar-open");
     menuToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    // サイドバーを開くなら絞り込みポップオーバーは閉じる (両方同時に開かない)
+    if (isOpen && isFilterPopoverOpen()) closeFilterPopover();
   });
   scrim.addEventListener("click", closeDrawer);
   // ディレクトリ選択時に自動で閉じる
