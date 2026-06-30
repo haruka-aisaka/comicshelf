@@ -1685,18 +1685,21 @@ details[open] > .dir-summary::before {
   filter: brightness(0.95);
   box-shadow: 0 1px 4px rgba(255, 180, 60, 0.2);
 }
-/* お気に入り済みなど押せない状態: ゴールド感を抑えて操作不可を視覚化 */
+/* お気に入り済みなど押せない状態: ゴールド感を完全に外してニュートラルな
+   disabled 表示に。 「動線はあるが今は無効」 が一目で伝わるようにする。 */
 .finish-modal-confirm.finish-modal-favorite:disabled {
-  background: linear-gradient(135deg, #6e5e2a 0%, #6a4f1f 100%);
-  border-color: #5a4a20;
-  color: rgba(255, 240, 180, 0.55);
-  font-weight: 600;
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-dim);
+  font-weight: 500;
+  letter-spacing: normal;
   box-shadow: none;
+  opacity: 0.55;
   cursor: not-allowed;
   filter: none;
 }
 .finish-modal-confirm.finish-modal-favorite:disabled .finish-modal-fav-icon {
-  color: rgba(255, 230, 120, 0.4);
+  color: var(--text-dim);
   text-shadow: none;
 }
 .finish-modal-fav-icon {
