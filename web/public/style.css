@@ -1677,18 +1677,27 @@ details[open] > .dir-summary::before {
   letter-spacing: 0.5px;
   box-shadow: 0 2px 10px rgba(255, 180, 60, 0.25);
 }
-/* [hidden] の display:none より display:inline-flex が後勝ちしてしまうため、
-   さらに同スペシフィシティ + 後勝ちで隠す。 */
-.finish-modal-confirm.finish-modal-favorite[hidden] {
-  display: none;
-}
-.finish-modal-confirm.finish-modal-favorite:hover {
+.finish-modal-confirm.finish-modal-favorite:hover:not(:disabled) {
   filter: brightness(1.05);
   box-shadow: 0 4px 14px rgba(255, 180, 60, 0.35);
 }
-.finish-modal-confirm.finish-modal-favorite:active {
+.finish-modal-confirm.finish-modal-favorite:active:not(:disabled) {
   filter: brightness(0.95);
   box-shadow: 0 1px 4px rgba(255, 180, 60, 0.2);
+}
+/* お気に入り済みなど押せない状態: ゴールド感を抑えて操作不可を視覚化 */
+.finish-modal-confirm.finish-modal-favorite:disabled {
+  background: linear-gradient(135deg, #6e5e2a 0%, #6a4f1f 100%);
+  border-color: #5a4a20;
+  color: rgba(255, 240, 180, 0.55);
+  font-weight: 600;
+  box-shadow: none;
+  cursor: not-allowed;
+  filter: none;
+}
+.finish-modal-confirm.finish-modal-favorite:disabled .finish-modal-fav-icon {
+  color: rgba(255, 230, 120, 0.4);
+  text-shadow: none;
 }
 .finish-modal-fav-icon {
   font-size: 18px;

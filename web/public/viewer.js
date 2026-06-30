@@ -1106,17 +1106,16 @@ function hideMenuOverlay() {
 }
 
 /** 最終ページで「次へ」操作した時に出す既読化モーダル
- *  - 未お気に入りなら「お気に入りに加えて閉じる」 ボタンも表示
- *  - お気に入り済みなら隠す (重複動線を避ける)
+ *  - 「お気に入りに加えて閉じる」 ボタンは常に表示するが、 既にお気に入り済みなら
+ *    disabled にして押せないようにする (動線として残しつつ重複操作を防ぐ)
  */
 function showFinishModal() {
   const modal = document.querySelector("#finish-modal");
   const backdrop = document.querySelector("#finish-modal-backdrop");
   if (!(modal instanceof HTMLElement) || !(backdrop instanceof HTMLElement)) return;
   const favBtn = modal.querySelector("#finish-modal-favorite-confirm");
-  if (favBtn instanceof HTMLElement) {
-    if (favoritedState) favBtn.setAttribute("hidden", "");
-    else favBtn.removeAttribute("hidden");
+  if (favBtn instanceof HTMLButtonElement) {
+    favBtn.disabled = favoritedState;
   }
   modal.removeAttribute("hidden");
   backdrop.removeAttribute("hidden");
