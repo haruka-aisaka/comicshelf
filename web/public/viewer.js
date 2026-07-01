@@ -401,7 +401,8 @@ function bindEvents() {
 
   // タブが背景に回った時は pause、 戻ったら resume
   document.addEventListener("visibilitychange", () => {
-    AutoAdvance.setSystemPaused(document.visibilityState !== "visible");
+    if (document.visibilityState === "visible") resumeAutoAdvance("visibility");
+    else pauseAutoAdvance("visibility");
   });
 
   document.addEventListener("keydown", (e) => {
@@ -966,6 +967,9 @@ function showLoaderDelayed(gen) {
   loaderTimer = setTimeout(() => {
     if (gen !== renderGeneration) return;
     loaderEl.removeAttribute("hidden");
+    // ロード表示が実際に出るタイミングで自動送りを止める。 100ms 未満で
+    // 完了する高速ロードでは pause が走らず、 通常のカウントを妨げない。
+    pauseAutoAdvance("loader");
   }, 100);
 }
 
@@ -975,6 +979,7 @@ function hideLoader() {
     loaderTimer = undefined;
   }
   if (loaderEl) loaderEl.setAttribute("hidden", "");
+  resumeAutoAdvance("loader");
 }
 
 function updateProgressBar() {
@@ -1082,7 +1087,7 @@ function showMenuOverlay() {
     updateMetaPanelFade(panel);
   }
   // メニュー表示中は自動送りを止める (誤発火・操作中断を防ぐ)
-  AutoAdvance.setSystemPaused(true);
+  pauseAutoAdvance("menu");
 }
 
 /** メタパネルのスクロール状態に応じて is-bottom クラスを付け外し (fade の表示制御) */
@@ -1096,7 +1101,21 @@ function hideMenuOverlay() {
   menuOverlay.setAttribute("hidden", "");
   const backdrop = document.querySelector("#menu-backdrop");
   if (backdrop) backdrop.setAttribute("hidden", "");
-  AutoAdvance.setSystemPaused(false);
+  resumeAutoAdvance("menu");
+}
+
+/** 自動送りの pause 理由を集約する Set。 メニュー表示 / 既読モーダル / ページ画像
+ *  ロード中 / タブ背景化 が複数同時に立ちうるため、 単純な true/false を各所で
+ *  上書きすると片方の解除で他の pause が消えてしまう。 refcount 相当の Set で
+ *  「いずれか 1 つでも active なら pause」 とする。 */
+const autoPauseReasons = new Set();
+function pauseAutoAdvance(reason) {
+  autoPauseReasons.add(reason);
+  AutoAdvance.setSystemPaused(true);
+}
+function resumeAutoAdvance(reason) {
+  autoPauseReasons.delete(reason);
+  if (autoPauseReasons.size === 0) AutoAdvance.setSystemPaused(false);
 }
 
 /** 一覧画面に戻る。 履歴があれば history.back で一覧側の絞り込み / 検索 /
@@ -1126,7 +1145,7 @@ function showFinishModal() {
   }
   modal.removeAttribute("hidden");
   backdrop.removeAttribute("hidden");
-  AutoAdvance.setSystemPaused(true);
+  pauseAutoAdvance("modal");
   const confirmBtn = /** @type {HTMLElement|null} */ (
     modal.querySelector("#finish-modal-confirm")
   );
@@ -1138,7 +1157,7 @@ function hideFinishModal() {
   const backdrop = document.querySelector("#finish-modal-backdrop");
   if (modal instanceof HTMLElement) modal.setAttribute("hidden", "");
   if (backdrop instanceof HTMLElement) backdrop.setAttribute("hidden", "");
-  AutoAdvance.setSystemPaused(false);
+  resumeAutoAdvance("modal");
 }
 
 function isFinishModalOpen() {
