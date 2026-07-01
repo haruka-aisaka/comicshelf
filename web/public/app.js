@@ -253,7 +253,7 @@ function closeFilterPopover() {
 
 /** 何らかの絞り込みが有効か (= default 以外) */
 function isAnyFilterActive() {
-  return state.status !== "all" || state.sort !== "title" || state.favorited === true;
+  return state.status !== "all" || state.sort !== "modified" || state.favorited === true;
 }
 
 function updateFilterToggleActive() {
@@ -284,9 +284,9 @@ if (filterResetBtn) {
       if (filterSel) filterSel.value = "all";
       changed = true;
     }
-    if (state.sort !== "title") {
-      state.sort = "title";
-      sortSel.value = "title";
+    if (state.sort !== "modified") {
+      state.sort = "modified";
+      sortSel.value = "modified";
       changed = true;
     }
     if (state.favorited) {
@@ -882,7 +882,7 @@ function makeFavoriteFilterAnchor(count) {
 function readQuery() {
   const q = new URLSearchParams(location.search);
   return {
-    sort: q.get("sort") ?? "title",
+    sort: q.get("sort") ?? "modified",
     directory: q.get("directory") ?? "",
     rootId: q.get("root") ?? "",
     status: q.get("status") ?? "all",
@@ -900,7 +900,7 @@ function readQuery() {
  */
 function writeQuery(opts = {}) {
   const q = new URLSearchParams();
-  if (state.sort !== "title") q.set("sort", state.sort);
+  if (state.sort !== "modified") q.set("sort", state.sort);
   if (state.rootId !== "") q.set("root", state.rootId);
   if (state.directory !== "") q.set("directory", state.directory);
   if (state.favorited) q.set("favorited", "1");

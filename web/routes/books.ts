@@ -48,7 +48,7 @@ export function buildBooksRoutes(deps: BooksDeps): Hono {
     const sortParam = c.req.query("sort");
     const sort = sortParam && (ALLOWED_SORTS as readonly string[]).includes(sortParam)
       ? (sortParam as SortKey)
-      : "title";
+      : "modified";
     const statusParam = c.req.query("status");
     const status = statusParam && (ALLOWED_STATUSES as readonly string[]).includes(statusParam)
       ? (statusParam as ReadStatusFilter)
