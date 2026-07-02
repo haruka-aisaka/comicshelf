@@ -1152,8 +1152,8 @@ details[open] > .dir-summary::before {
   min-width: 56px;
 }
 /* スライダーをフルカスタムスタイル化。
-   ラッパー .auto-adv-slider-wrap で thumb 半径ぶん左右にはみ出させ、
-   thumb が track と input の左右端まで揃って到達するようにする。 */
+   ラッパー .auto-adv-slider-wrap に thumb 半径分の padding を入れて、
+   thumb の外縁 (端) が wrap の端にピタリと揃うようにする。 */
 .auto-adv-slider-wrap {
   flex: 1 1 160px;
   min-width: 120px;
@@ -1161,6 +1161,8 @@ details[open] > .dir-summary::before {
   display: flex;
   align-items: center;
   height: 22px;
+  padding: 0 9px;
+  box-sizing: border-box;
 }
 #auto-adv-sec[type="range"] {
   -webkit-appearance: none;
@@ -1170,9 +1172,8 @@ details[open] > .dir-summary::before {
   outline: none;
   height: 22px;
   padding: 0;
-  margin: 0
-    -9px; /* 半径分を外側に出して thumb 中心が input の "外側端" まで届く */
-  width: calc(100% + 18px);
+  margin: 0;
+  width: 100%;
   cursor: pointer;
 }
 #auto-adv-sec[type="range"]:focus {
@@ -1184,8 +1185,8 @@ details[open] > .dir-summary::before {
   background: linear-gradient(
     to right,
     var(--accent, #7aa2f7) 0,
-    var(--accent, #7aa2f7) calc(9px + (100% - 18px) * var(--val, 0)),
-    var(--border) calc(9px + (100% - 18px) * var(--val, 0)),
+    var(--accent, #7aa2f7) calc(100% * var(--val, 0)),
+    var(--border) calc(100% * var(--val, 0)),
     var(--border) 100%
   );
   border-radius: 2px;

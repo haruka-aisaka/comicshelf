@@ -16,29 +16,32 @@ Deno.test("clamp: 範囲内/下限/上限", () => {
   assertEquals(clamp(5, 7, 7), 7);
 });
 
-Deno.test("clampInterval: 最短1秒、 0.1秒丸め、 上限600", () => {
-  assertEquals(MIN_INTERVAL_SEC, 1);
-  assertEquals(MAX_INTERVAL_SEC, 600);
+Deno.test("clampInterval: 最短1.5秒、 0.1秒丸め、 上限12", () => {
+  assertEquals(MIN_INTERVAL_SEC, 1.5);
+  assertEquals(MAX_INTERVAL_SEC, 12);
 
-  // 1 未満 / 非数 / 負数 → 1
-  assertEquals(clampInterval(0), 1);
-  assertEquals(clampInterval(0.5), 1);
-  assertEquals(clampInterval(-3), 1);
-  assertEquals(clampInterval(NaN), 1);
-  assertEquals(clampInterval(Infinity), 1);
+  // 1.5 未満 / 非数 / 負数 → 1.5
+  assertEquals(clampInterval(0), 1.5);
+  assertEquals(clampInterval(0.5), 1.5);
+  assertEquals(clampInterval(1), 1.5);
+  assertEquals(clampInterval(1.4), 1.5);
+  assertEquals(clampInterval(-3), 1.5);
+  assertEquals(clampInterval(NaN), 1.5);
+  assertEquals(clampInterval(Infinity), 1.5);
 
   // 通常値: そのまま (0.1 単位)
-  assertEquals(clampInterval(1), 1);
   assertEquals(clampInterval(1.5), 1.5);
+  assertEquals(clampInterval(5), 5);
   assertEquals(clampInterval(10), 10);
 
   // 0.01 単位は 0.1 に丸め
-  assertEquals(clampInterval(1.23), 1.2);
-  assertEquals(clampInterval(1.27), 1.3);
+  assertEquals(clampInterval(2.23), 2.2);
+  assertEquals(clampInterval(2.27), 2.3);
 
   // 上限超
-  assertEquals(clampInterval(601), 600);
-  assertEquals(clampInterval(10000), 600);
+  assertEquals(clampInterval(12), 12);
+  assertEquals(clampInterval(13), 12);
+  assertEquals(clampInterval(600), 12);
 });
 
 Deno.test("formatIntervalLabel: 整数は小数なし、 小数は 0.1 表示", () => {

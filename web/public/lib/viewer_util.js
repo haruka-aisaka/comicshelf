@@ -4,10 +4,10 @@
  * 単体テスト可能 (tests/web/viewer_util_test.ts)。
  */
 
-/** 自動送りの最短間隔 (秒)。 1 秒未満は無効化。 */
-export const MIN_INTERVAL_SEC = 1;
-/** 自動送りの最長 (安全網)。 UI は 60 秒だが API/localStorage の不正値防御用。 */
-export const MAX_INTERVAL_SEC = 600;
+/** 自動送りの最短間隔 (秒)。 これ未満は MIN に丸める。 */
+export const MIN_INTERVAL_SEC = 1.5;
+/** 自動送りの最長 (秒)。 これ以上は MAX に丸める。 */
+export const MAX_INTERVAL_SEC = 12;
 
 /**
  * n を [lo, hi] に収める
@@ -22,7 +22,7 @@ export function clamp(n, lo, hi) {
 
 /**
  * 自動送り間隔を有効範囲にクランプ。 0.1 秒単位に丸め、
- * 1 未満は 1、 600 超は 600 に丸める。 非数や負数も 1 にする。
+ * MIN 未満は MIN、 MAX 超は MAX にする。 非数や負数も MIN にする。
  * @param {number} n
  * @returns {number}
  */
