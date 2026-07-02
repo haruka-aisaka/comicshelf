@@ -352,10 +352,12 @@ function bindEvents() {
   let seekDebounce = /** @type {ReturnType<typeof setTimeout> | null} */ (null);
   const onSeekInput = () => {
     const target = clamp(Number(seekBar.value), 0, Math.max(0, totalPages - 1));
-    // 即座にindicator / pageInput を仮更新 (体感反応)
+    // 即座にindicator / pageInput / gradient を仮更新 (体感反応)
     if (totalPages > 0) {
       indicator.textContent = `${target + 1} / ${totalPages}`;
       pageInput.value = String(target + 1);
+      const ratio = totalPages > 1 ? target / (totalPages - 1) : 0;
+      seekBar.style.setProperty("--val", String(Math.max(0, Math.min(1, ratio))));
     }
     if (seekDebounce !== null) clearTimeout(seekDebounce);
     seekDebounce = setTimeout(() => {
@@ -1289,6 +1291,10 @@ function syncSeekUi() {
   if (totalPages > 0) {
     seekBar.value = String(currentPage);
     pageInput.value = String(currentPage + 1);
+    // シークバーの gradient (accent 帯) 用に進捗比率を CSS 変数で渡す。
+    // 0..1 の範囲。 totalPages が確定してから呼ばれる。
+    const ratio = totalPages > 1 ? currentPage / (totalPages - 1) : 0;
+    seekBar.style.setProperty("--val", String(Math.max(0, Math.min(1, ratio))));
   }
 }
 
