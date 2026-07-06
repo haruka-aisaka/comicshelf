@@ -60,6 +60,14 @@ const params = new URLSearchParams(location.search);
 const bookId = Number(params.get("book"));
 let currentPage = Number(params.get("page") ?? "0");
 let totalPages = -1;
+/** ページ名一覧 (拡張子から動画ページ判定に使う)。 listPages 完了までは空 */
+let pageNames = /** @type {string[]} */ ([]);
+const VIDEO_PAGE_RE = /\.(mp4|webm)$/i;
+
+/** @param {number} pageIndex */
+function isVideoPage(pageIndex) {
+  return VIDEO_PAGE_RE.test(pageNames[pageIndex] ?? "");
+}
 let saveTimer = null;
 let pagesReady = null;
 /** 既読 (finished=true) か。 既読本は途中位置を保存せず、 再度開いた時に先頭から始める */
@@ -198,13 +206,17 @@ async function init() {
   applyCoverUi();
 
   pagesReady.then((pagesData) => {
+    pageNames = pagesData.pages;
     totalPages = pagesData.pages.length;
     currentPage = clamp(alignToPair(currentPage), 0, Math.max(0, totalPages - 1));
     seekBar.max = String(Math.max(0, totalPages - 1));
     pageInput.max = String(totalPages);
     seekTotal.textContent = String(totalPages);
     syncSeekUi();
-    if (currentPage !== 0 || pagesEl.querySelector("img[data-from-thumb='1']")) {
+    if (
+      currentPage !== 0 || isVideoPage(currentPage) ||
+      pagesEl.querySelector("img[data-from-thumb='1']")
+    ) {
       render();
     }
     indicator.textContent = `${currentPage + 1} / ${totalPages}`;
@@ -241,6 +253,8 @@ function prefetchAround(centerPage) {
     for (const p of [centerPage + d, centerPage - d]) {
       if (p < 0 || p >= totalPages) continue;
       if (prefetched.has(p)) continue;
+      // 動画ページは Image() で prefetch できない (再生時に <video> が直接読む)
+      if (isVideoPage(p)) continue;
       const img = new Image();
       img.decoding = "async";
       img.draggable = false;
@@ -407,6 +421,12 @@ function bindEvents() {
     else pauseAutoAdvance("visibility");
   });
 
+  // BFCache 復元時は <video> が停止した状態で戻るので再生を再開する
+  window.addEventListener("pageshow", (e) => {
+    if (!e.persisted) return;
+    for (const v of pagesEl.querySelectorAll("video")) v.play().catch(() => {});
+  });
+
   document.addEventListener("keydown", (e) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
     switch (e.key) {
@@ -507,6 +527,11 @@ function bindTouchAndTap() {
 
   stage.addEventListener("touchmove", (e) => {
     if (pinch && e.touches.length === 2) {
+      // 動画ページはピンチ拡大対象外
+      if (isVideoPage(currentPage)) {
+        e.preventDefault();
+        return;
+      }
       const [a, b] = [e.touches[0], e.touches[1]];
       const newDist = touchDistance(a, b);
       const anchor = anchorOf(a, b);
@@ -636,6 +661,7 @@ function bindTouchAndTap() {
   // PC: Ctrl+ホイールで拡大 (カーソル位置を不動点に)
   stage.addEventListener("wheel", (e) => {
     if (!e.ctrlKey) return;
+    if (isVideoPage(currentPage)) return;
     const rect = stage.getBoundingClientRect();
     const anchorX = e.clientX - (rect.left + rect.width / 2);
     const anchorY = e.clientY - (rect.top + rect.height / 2);
@@ -711,6 +737,8 @@ function executeSingleTap(screenX, _screenY) {
 
 /** ダブルタップ時の拡大/リセット動作 */
 function doubleTapZoom(screenX, screenY) {
+  // 動画ページはズーム対象外 (fit 表示のみ)
+  if (isVideoPage(currentPage)) return;
   if (zoomScale > 1.05) {
     // すでに拡大中ならリセット
     resetZoom();
@@ -944,14 +972,24 @@ function render() {
   // 100ms 以内に decode が完了すればチラつかせない
   showLoaderDelayed(gen);
 
-  Promise.all(indices.map((i) => loadImageDecoded(i))).then((imgs) => {
-    if (gen !== renderGeneration) return;
-    pagesEl.replaceChildren(...imgs);
-    hideLoader();
-  }).catch((e) => {
-    console.warn("page render failed", e);
-    hideLoader();
-  });
+  // 動画ページ表示中は自動送りカウンターを進めない
+  if (indices.some((i) => isVideoPage(i))) pauseAutoAdvance("video");
+  else resumeAutoAdvance("video");
+
+  Promise.all(indices.map((i) => isVideoPage(i) ? loadVideoElement(i) : loadImageDecoded(i)))
+    .then((els) => {
+      if (gen !== renderGeneration) return;
+      // 差し替え前に旧動画を明示停止 (DOM から外れても再生が残る実装系への保険)
+      for (const v of pagesEl.querySelectorAll("video")) v.pause();
+      pagesEl.replaceChildren(...els);
+      for (const el of els) {
+        if (el instanceof HTMLVideoElement) el.play().catch(() => {});
+      }
+      hideLoader();
+    }).catch((e) => {
+      console.warn("page render failed", e);
+      hideLoader();
+    });
 
   const totalLabel = totalPages > 0 ? totalPages : "…";
   const lastIdx = indices[indices.length - 1];
@@ -1008,11 +1046,39 @@ function updateProgressBar() {
  *   - 末尾でcurrentPage+1 が範囲外なら単独
  */
 function pageIndicesToShow() {
+  // 動画ページは見開き設定に関わらず常に単ページ
+  if (isVideoPage(currentPage)) return [currentPage];
   if (!spreadCb.checked) return [currentPage];
   if (currentPage === 0) return [0];
   const upper = totalPages > 0 ? totalPages : currentPage + 2;
-  if (currentPage + 1 < upper) return [currentPage, currentPage + 1];
+  if (currentPage + 1 < upper && !isVideoPage(currentPage + 1)) {
+    return [currentPage, currentPage + 1];
+  }
   return [currentPage];
+}
+
+/**
+ * 動画ページ用の <video> を生成し、 初回フレームが用意できたら resolve。
+ * 自動再生・ループ・ミュート固定 (コントロール UI は出さない)。
+ * @param {number} pageIndex
+ * @returns {Promise<HTMLVideoElement>}
+ */
+function loadVideoElement(pageIndex) {
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+    video.autoplay = true;
+    video.loop = true;
+    video.muted = true;
+    video.playsInline = true;
+    // iOS Safari は property だけでなく属性も見る
+    video.setAttribute("playsinline", "");
+    video.setAttribute("muted", "");
+    video.preload = "auto";
+    video.src = `/api/books/${bookId}/pages/${pageIndex}`;
+    const done = () => resolve(video);
+    video.addEventListener("loadeddata", done, { once: true });
+    video.addEventListener("error", done, { once: true });
+  });
 }
 
 function loadImageDecoded(pageIndex) {
@@ -1201,6 +1267,11 @@ function applyCoverUi() {
     document.querySelector("#cover-clear-btn")
   );
   if (!(row instanceof HTMLElement) || !setBtn || !clearBtn) return;
+  // 動画ページは表紙に設定できない (サムネは zip 内画像から生成される)
+  if (isVideoPage(currentPage)) {
+    row.setAttribute("hidden", "");
+    return;
+  }
   row.removeAttribute("hidden");
 
   const isCurrentCover = coverPageIndex !== null && coverPageIndex === currentPage;
