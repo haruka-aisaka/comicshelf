@@ -509,6 +509,8 @@ Deno.test("API: 動画ブック (cover.jpg + mp4) のページ配信 + Range 対
     const list = await (await w.app.app.request("/api/books?q=ugoira")).json();
     assertEquals(list.books.length, 1);
     const id = list.books[0].id;
+    // 一覧の再生バッジ表示用フラグ
+    assertEquals(list.books[0].hasVideo, true);
 
     // 動画のみ 1 ページ (cover.jpg はページに含まれない)
     const pagesRes = await (await w.app.app.request(`/api/books/${id}/pages`)).json();

@@ -90,7 +90,7 @@ Deno.test("migration: v2 DB を開くと root_id が defaultRootId で埋まる"
       const ver = db
         .prepare("SELECT value FROM schema_meta WHERE key = 'version'")
         .get<{ value: string }>();
-      assertEquals(ver?.value, "5");
+      assertEquals(ver?.value, "6");
 
       // UNIQUE(root_id, path) に切り替わっている: 同じ path でも別 root なら挿入可能
       db.prepare(
@@ -117,19 +117,21 @@ Deno.test("migration: v2 DB を開くと root_id が defaultRootId で埋まる"
   }
 });
 
-Deno.test("migration: 新規 DB は v5 で立ち上がる + favorites / book_covers テーブルがある", () => {
+Deno.test("migration: 新規 DB は v6 で立ち上がる + favorites / book_covers テーブルがある", () => {
   const db = openDatabase(":memory:", "comics");
   try {
     const ver = db
       .prepare("SELECT value FROM schema_meta WHERE key = 'version'")
       .get<{ value: string }>();
-    assertEquals(ver?.value, "5");
+    assertEquals(ver?.value, "6");
     // books に root_id カラムがある
     const cols = db
       .prepare("SELECT name FROM pragma_table_info('books')")
       .all<{ name: string }>()
       .map((r) => r.name);
     assertEquals(cols.includes("root_id"), true);
+    // v6: books に has_video カラムがある
+    assertEquals(cols.includes("has_video"), true);
     // favorites テーブルが存在し、 期待カラムを持つ
     const favCols = db
       .prepare("SELECT name FROM pragma_table_info('favorites')")
@@ -192,7 +194,7 @@ Deno.test("migration: v2 → v5 でも read_states / favorites の整合性が�
       const ver = db
         .prepare("SELECT value FROM schema_meta WHERE key = 'version'")
         .get<{ value: string }>();
-      assertEquals(ver?.value, "5");
+      assertEquals(ver?.value, "6");
       // 既読状態が消えていない
       const rs = db
         .prepare("SELECT last_page FROM read_states WHERE book_id = 1")

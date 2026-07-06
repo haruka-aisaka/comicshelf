@@ -15,6 +15,7 @@ interface BookRow {
   modified_at: number;
   added_at: number;
   page_count: number | null;
+  has_video: number;
 }
 
 function rowToBook(r: BookRow): Book {
@@ -29,6 +30,7 @@ function rowToBook(r: BookRow): Book {
     modifiedAt: r.modified_at,
     addedAt: r.added_at,
     pageCount: r.page_count,
+    hasVideo: r.has_video === 1,
   };
 }
 
@@ -42,15 +44,16 @@ export type BookUpsertInput = Omit<Book, "id" | "addedAt">;
  */
 export function upsertBook(db: Database, input: BookUpsertInput, now: number): Book {
   const stmt = db.prepare(`
-    INSERT INTO books (root_id, path, filename, title, directory, size_bytes, modified_at, added_at, page_count)
-    VALUES (:root_id, :path, :filename, :title, :directory, :size_bytes, :modified_at, :added_at, :page_count)
+    INSERT INTO books (root_id, path, filename, title, directory, size_bytes, modified_at, added_at, page_count, has_video)
+    VALUES (:root_id, :path, :filename, :title, :directory, :size_bytes, :modified_at, :added_at, :page_count, :has_video)
     ON CONFLICT(root_id, path) DO UPDATE SET
       filename = excluded.filename,
       title = excluded.title,
       directory = excluded.directory,
       size_bytes = excluded.size_bytes,
       modified_at = excluded.modified_at,
-      page_count = COALESCE(excluded.page_count, books.page_count)
+      page_count = COALESCE(excluded.page_count, books.page_count),
+      has_video = excluded.has_video
   `);
   stmt.run({
     root_id: input.rootId,
@@ -62,6 +65,7 @@ export function upsertBook(db: Database, input: BookUpsertInput, now: number): B
     modified_at: input.modifiedAt,
     added_at: now,
     page_count: input.pageCount,
+    has_video: input.hasVideo ? 1 : 0,
   });
   const row = db
     .prepare("SELECT * FROM books WHERE root_id = ? AND path = ?")
@@ -75,6 +79,11 @@ export function upsertBook(db: Database, input: BookUpsertInput, now: number): B
 /** pageCountのみ更新 (アーカイブ走査後の事後更新用) */
 export function updatePageCount(db: Database, bookId: number, pageCount: number): void {
   db.prepare("UPDATE books SET page_count = ? WHERE id = ?").run(pageCount, bookId);
+}
+
+/** hasVideoのみ更新 (v6 以前にインデックス済みの本への遅延反映用) */
+export function updateHasVideo(db: Database, bookId: number, hasVideo: boolean): void {
+  db.prepare("UPDATE books SET has_video = ? WHERE id = ?").run(hasVideo ? 1 : 0, bookId);
 }
 
 /** (rootId, path) 指定削除 (インデクサーがファイル消失を検出した時に使用) */

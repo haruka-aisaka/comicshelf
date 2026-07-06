@@ -78,6 +78,12 @@ export async function listPages(filePath: string): Promise<PageEntry[]> {
   }
 }
 
+/** 動画ブック (ページが動画で構成される) かを判定 (インデックス時の has_video 用) */
+export async function hasVideoPages(filePath: string): Promise<boolean> {
+  const pages = await listPages(filePath);
+  return pages.some((p) => p.contentType.startsWith("video/"));
+}
+
 /** ページ数のみを得たい場合の最適化版 */
 export async function countPages(filePath: string): Promise<number> {
   return (await listPages(filePath)).length;

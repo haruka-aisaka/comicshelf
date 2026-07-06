@@ -23,6 +23,8 @@ export interface Book {
   addedAt: number;
   /** 総ページ数 (未スキャン時は null) */
   pageCount: number | null;
+  /** 動画ブック (zip 内に mp4/webm を含む) か。 一覧サムネの再生バッジ表示に使う */
+  hasVideo: boolean;
 }
 
 /** 既読管理レコード */

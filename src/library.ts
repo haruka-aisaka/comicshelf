@@ -6,6 +6,7 @@ import {
   deleteCoverIfOutOfRange,
   getBookById,
   getCover,
+  updateHasVideo,
   updatePageCount,
 } from "./db/repository.ts";
 import { type PageEntry, readFirstImage, readFirstPage, readPage } from "./reader/archive.ts";
@@ -64,6 +65,11 @@ export class LibraryService {
         name: p.filename,
         contentType: p.contentType,
       }));
+      // v6 以前にインデックス済みの本への has_video 遅延反映 (再インデックス不要の自己修復)
+      const hasVideo = pages.some((p) => p.contentType.startsWith("video/"));
+      if (resolved.book.hasVideo !== hasVideo) {
+        updateHasVideo(this.db, bookId, hasVideo);
+      }
       if (resolved.book.pageCount !== pages.length) {
         updatePageCount(this.db, bookId, pages.length);
         // 表紙設定が新ページ数の範囲外になっていたら削除 (= 先頭に戻す)。

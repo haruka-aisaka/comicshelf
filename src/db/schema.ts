@@ -4,7 +4,7 @@ import { Database } from "@db/sqlite";
  * 現在のスキーマバージョン。
  * マイグレーション追加時にインクリメントする。
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /**
  * テーブル定義 (バージョン1)。
@@ -151,6 +151,9 @@ function applyMigrations(db: Database, defaultRootId: string): void {
   db.exec(SCHEMA_V4);
   // v5: book_covers テーブル追加。 favorites と同じく完全に独立したテーブル。
   db.exec(SCHEMA_V5);
+  // v6: books.has_video 追加 (動画ブック判定。 一覧サムネの再生バッジ用)。
+  // 既存レコードは 0 のまま — 再インデックス or ビューワーで開いた時に遅延反映される。
+  migrateToV6(db);
   if (current === null) {
     db.prepare("INSERT INTO schema_meta(key, value) VALUES('version', ?)").run(
       String(SCHEMA_VERSION),
@@ -227,6 +230,15 @@ function migrateToV3(db: Database, defaultRootId: string): void {
     throw new Error(`v3 migration: foreign key check failed: ${JSON.stringify(broken)}`);
   }
   db.exec("PRAGMA foreign_keys = ON");
+}
+
+/** v5 → v6: books.has_video カラム追加 (存在チェック付きで冪等) */
+function migrateToV6(db: Database): void {
+  const hasColumn = db
+    .prepare("SELECT 1 FROM pragma_table_info('books') WHERE name = 'has_video'")
+    .get<{ "1": number }>() !== undefined;
+  if (hasColumn) return;
+  db.exec("ALTER TABLE books ADD COLUMN has_video INTEGER NOT NULL DEFAULT 0");
 }
 
 function getSchemaVersion(db: Database): number | null {

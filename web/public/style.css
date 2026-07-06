@@ -483,6 +483,35 @@ details[open] > .dir-summary::before {
   background: var(--accent);
 }
 
+/* 動画ブックの再生バッジ。 サムネ (aspect-ratio 3/4) と同じ領域に重ね、
+   その中央に ▶ の丸バッジを表示する。 pointer-events: none でタップはカードに透過 */
+.card-video-badge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.card-video-badge::before {
+  content: "▶";
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* ▶ グリフの光学中心が左に寄って見えるのを補正 */
+  padding-left: 4px;
+  box-sizing: border-box;
+}
+
 /* ---------- カード上のお気に入りボタン (右上) ---------- */
 .card-favorite-btn {
   position: absolute;

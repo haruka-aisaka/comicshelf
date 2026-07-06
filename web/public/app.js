@@ -710,6 +710,14 @@ function makeCard(book) {
   };
   card.appendChild(img);
 
+  // 動画ブック: サムネ中央に再生バッジを重ねる (装飾のみ、 タップはカードに透過)
+  if (book.hasVideo) {
+    const badge = document.createElement("span");
+    badge.className = "card-video-badge";
+    badge.setAttribute("aria-hidden", "true");
+    card.appendChild(badge);
+  }
+
   // ★ アイコン/ボタン: 右上に重ねる。
   //   - お気に入り済み : 黄色 ★ を常時表示 (タップ可)
   //   - 未設定        : 通常時は非表示、 hover/focus 時のみ ☆ を表示 (デスクトップ)

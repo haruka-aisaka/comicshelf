@@ -9,7 +9,7 @@ import {
   upsertBook,
   upsertComicInfo,
 } from "../db/repository.ts";
-import { readComicInfoXml } from "../reader/archive.ts";
+import { hasVideoPages, readComicInfoXml } from "../reader/archive.ts";
 import { parseComicInfo } from "../comicinfo/parser.ts";
 import type { LibraryRoot } from "../types.ts";
 
@@ -109,6 +109,14 @@ export async function reindex(db: Database, opts: IndexOptions): Promise<IndexSt
           }
         }
 
+        const absPath = join(f.root, f.relativePath);
+        // 動画ブック判定 (失敗しても false 扱いでインデックスは続行)
+        let hasVideo = false;
+        try {
+          hasVideo = await hasVideoPages(absPath);
+        } catch (e) {
+          console.warn(`[indexer] 動画判定失敗 ${labelled}:`, e);
+        }
         const book = upsertBook(db, {
           rootId: root.id,
           path: f.relativePath,
@@ -118,10 +126,10 @@ export async function reindex(db: Database, opts: IndexOptions): Promise<IndexSt
           sizeBytes: f.sizeBytes,
           modifiedAt: f.modifiedAt,
           pageCount: null,
+          hasVideo,
         }, now());
         stats.upserted++;
         // ComicInfo.xml の取り込み (失敗しても他の書籍への影響を出さない)
-        const absPath = join(f.root, f.relativePath);
         try {
           const xml = await readComicInfoXml(absPath);
           if (xml) {

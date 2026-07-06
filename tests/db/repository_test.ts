@@ -19,6 +19,7 @@ import {
   listRecentlyFavorited,
   listRecentlyFinished,
   setFavorite,
+  updateHasVideo,
   updatePageCount,
   upsertBook,
   upsertComicInfo,
@@ -38,6 +39,7 @@ function makeBook(overrides: Partial<BookUpsertInput> = {}): BookUpsertInput {
     sizeBytes: 1024,
     modifiedAt: 1_700_000_000,
     pageCount: null,
+    hasVideo: false,
     ...overrides,
   };
 }
@@ -67,6 +69,24 @@ Deno.test("upsertBook: pageCountはCOALESCEで既存値を保持", () => {
   const b2 = upsertBook(db, makeBook({ pageCount: null }), 2);
   assertEquals(b2.pageCount, 24);
   assertEquals(b2.id, b1.id);
+});
+
+Deno.test("upsertBook: hasVideo の保存と再 upsert での更新", () => {
+  const db = openDatabase(":memory:");
+  const b1 = upsertBook(db, makeBook({ hasVideo: true }), 1);
+  assertEquals(b1.hasVideo, true);
+  // 動画が消えた再 upsert では false に更新される
+  const b2 = upsertBook(db, makeBook({ hasVideo: false }), 2);
+  assertEquals(b2.hasVideo, false);
+  assertEquals(b2.id, b1.id);
+});
+
+Deno.test("updateHasVideo: 後から遅延反映できる", () => {
+  const db = openDatabase(":memory:");
+  const b = upsertBook(db, makeBook(), 1);
+  assertEquals(b.hasVideo, false);
+  updateHasVideo(db, b.id, true);
+  assertEquals(getBookById(db, b.id)?.hasVideo, true);
 });
 
 Deno.test("updatePageCount: ページ数を後から更新できる", () => {
