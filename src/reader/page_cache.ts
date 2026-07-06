@@ -21,6 +21,7 @@
  */
 import { extname, join } from "@std/path";
 import { BlobWriter, type Entry, ZipReader } from "@zip-js/zip-js";
+import { selectPageSubset } from "./archive.ts";
 import { FileSliceReader } from "./file_reader.ts";
 
 export interface PageCacheOptions {
@@ -43,9 +44,11 @@ const MIME: Record<string, string> = {
   ".gif": "image/gif",
   ".avif": "image/avif",
   ".bmp": "image/bmp",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
 };
 
-const IMAGE_EXTS = new Set(Object.keys(MIME));
+const PAGE_EXTS = new Set(Object.keys(MIME));
 
 function extToMime(ext: string): string {
   return MIME[ext.toLowerCase()] ?? "application/octet-stream";
@@ -97,17 +100,19 @@ export class PageCache {
     if (cached) return cached;
 
     const archive = await this.openArchive(bookId, archivePath);
-    const pages: PageManifestEntry[] = [];
+    const candidates: PageManifestEntry[] = [];
     for (const entry of archive.entryByName.values()) {
       if (entry.directory) continue;
       const ext = extname(entry.filename).toLowerCase();
-      if (!IMAGE_EXTS.has(ext)) continue;
-      pages.push({
+      if (!PAGE_EXTS.has(ext)) continue;
+      candidates.push({
         filename: "", // 確定はソート後
         archiveName: entry.filename,
         contentType: extToMime(ext),
       });
     }
+    // 動画が 1 つでもあれば動画のみ (動画ブック)。 archive.ts の listPages と揃える
+    const pages = selectPageSubset(candidates, (p) => p.archiveName);
     pages.sort((a, b) => naturalCompare(a.archiveName, b.archiveName));
     for (let i = 0; i < pages.length; i++) {
       const ext = extname(pages[i]!.archiveName).toLowerCase() || ".bin";

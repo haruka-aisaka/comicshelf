@@ -15,6 +15,9 @@ import { extname } from "@std/path";
 /** ページ扱いする画像拡張子 (小文字, ドット込み) */
 const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".bmp"]);
 
+/** ページ扱いする動画拡張子。 1つでも含まれるとその本は動画ブックになる */
+export const VIDEO_EXTS: ReadonlySet<string> = new Set([".mp4", ".webm"]);
+
 const MIME_TYPES: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -23,7 +26,18 @@ const MIME_TYPES: Record<string, string> = {
   ".gif": "image/gif",
   ".avif": "image/avif",
   ".bmp": "image/bmp",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
 };
+
+/**
+ * ページ候補から実際にページとする集合を選ぶ。
+ * 動画が 1 つでもあれば動画のみ (動画ブック)、 なければ従来どおり画像のみ。
+ */
+export function selectPageSubset<T>(items: T[], nameOf: (item: T) => string): T[] {
+  const videos = items.filter((i) => VIDEO_EXTS.has(extname(nameOf(i)).toLowerCase()));
+  return videos.length > 0 ? videos : items;
+}
 
 export interface PageEntry {
   /** アーカイブ内のフルパス */
@@ -46,7 +60,7 @@ async function openReader(filePath: string): Promise<ZipReader<Blob>> {
 function entryToPage(entry: Entry): PageEntry | null {
   if (entry.directory) return null;
   const ext = extname(entry.filename).toLowerCase();
-  if (!IMAGE_EXTS.has(ext)) return null;
+  if (!IMAGE_EXTS.has(ext) && !VIDEO_EXTS.has(ext)) return null;
   return { name: entry.filename, contentType: MIME_TYPES[ext] ?? "application/octet-stream" };
 }
 
@@ -55,7 +69,8 @@ export async function listPages(filePath: string): Promise<PageEntry[]> {
   const reader = await openReader(filePath);
   try {
     const entries = await reader.getEntries();
-    const pages = entries.map(entryToPage).filter((p): p is PageEntry => p !== null);
+    const candidates = entries.map(entryToPage).filter((p): p is PageEntry => p !== null);
+    const pages = selectPageSubset(candidates, (p) => p.name);
     pages.sort((a, b) => naturalCompare(a.name, b.name));
     return pages;
   } finally {
@@ -76,11 +91,12 @@ export async function readPage(filePath: string, index: number): Promise<PageDat
   const reader = await openReader(filePath);
   try {
     const entries = await reader.getEntries();
-    const pages: { entry: Entry; meta: PageEntry }[] = [];
+    const candidates: { entry: Entry; meta: PageEntry }[] = [];
     for (const e of entries) {
       const meta = entryToPage(e);
-      if (meta) pages.push({ entry: e, meta });
+      if (meta) candidates.push({ entry: e, meta });
     }
+    const pages = selectPageSubset(candidates, (p) => p.meta.name);
     pages.sort((a, b) => naturalCompare(a.meta.name, b.meta.name));
     const target = pages[index];
     if (!target) return null;
@@ -97,6 +113,33 @@ export async function readPage(filePath: string, index: number): Promise<PageDat
 /** 先頭ページ (サムネイル用ショートカット) */
 export function readFirstPage(filePath: string): Promise<PageData | null> {
   return readPage(filePath, 0);
+}
+
+/**
+ * アーカイブ内の先頭「画像」を返す (動画ブックのサムネイル用)。
+ * ページ選抜 (動画のみ) の対象外で、 zip 内の全画像から自然順先頭を選ぶ。
+ * 画像が 1 枚もなければ null。
+ */
+export async function readFirstImage(filePath: string): Promise<PageData | null> {
+  const reader = await openReader(filePath);
+  try {
+    const entries = await reader.getEntries();
+    const images = entries.filter((e) =>
+      !e.directory && IMAGE_EXTS.has(extname(e.filename).toLowerCase())
+    );
+    images.sort((a, b) => naturalCompare(a.filename, b.filename));
+    const target = images[0];
+    if (!target || !("getData" in target) || !target.getData) return null;
+    const blob = await target.getData(new BlobWriter());
+    const ext = extname(target.filename).toLowerCase();
+    return {
+      name: target.filename,
+      contentType: MIME_TYPES[ext] ?? "application/octet-stream",
+      bytes: new Uint8Array(await blob.arrayBuffer()),
+    };
+  } finally {
+    await reader.close();
+  }
 }
 
 /**

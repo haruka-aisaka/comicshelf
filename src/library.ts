@@ -8,7 +8,7 @@ import {
   getCover,
   updatePageCount,
 } from "./db/repository.ts";
-import { type PageEntry, readFirstPage, readPage } from "./reader/archive.ts";
+import { type PageEntry, readFirstImage, readFirstPage, readPage } from "./reader/archive.ts";
 import { PageCache } from "./reader/page_cache.ts";
 import { generateThumbnailWebp } from "./reader/thumbnail.ts";
 
@@ -158,6 +158,16 @@ export class LibraryService {
     } catch (err) {
       console.warn(`[thumbnail] readPage failed for ${bookId}:`, err);
       return null;
+    }
+    // 動画ブック: 先頭ページが動画なので、 zip 内の画像 (cover 等) からサムネを作る。
+    // 画像が無ければ null (= 一覧側のプレースホルダー表示)
+    if (page && page.contentType.startsWith("video/")) {
+      try {
+        page = await readFirstImage(resolved.absPath);
+      } catch (err) {
+        console.warn(`[thumbnail] readFirstImage failed for ${bookId}:`, err);
+        return null;
+      }
     }
     if (!page) return null;
 
