@@ -489,3 +489,80 @@ Deno.test("Server: GET / は query を保持して /index.html に redirect", as
     await w.cleanup();
   }
 });
+
+Deno.test("API: 動画ブック (cover.jpg + mp4) のページ配信 + Range 対応", async () => {
+  const w = await setupWorld();
+  try {
+    // フィクスチャ追加: 動画入り zip
+    const videoBytes = new Uint8Array(64).map((_, i) => i);
+    await writeCbz(join(w.libraryRoot, "series-b/ugoira.cbz"), [
+      { name: "cover.jpg", data: fakeJpegBytes(5) },
+      { name: "ugoira.mp4", data: videoBytes },
+    ]);
+    await w.app.app.request("/api/index/rebuild", { method: "POST" });
+    for (let i = 0; i < 100; i++) {
+      const s = await (await w.app.app.request("/api/index/status")).json();
+      if (!s.running) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+
+    const list = await (await w.app.app.request("/api/books?q=ugoira")).json();
+    assertEquals(list.books.length, 1);
+    const id = list.books[0].id;
+
+    // 動画のみ 1 ページ (cover.jpg はページに含まれない)
+    const pagesRes = await (await w.app.app.request(`/api/books/${id}/pages`)).json();
+    assertEquals(pagesRes.pages, ["0000.mp4"]);
+
+    // pageCount は listPages 時に遅延反映される
+    const detail = await (await w.app.app.request(`/api/books/${id}`)).json();
+    assertEquals(detail.book.pageCount, 1);
+
+    // 全体取得: 200 + accept-ranges
+    const full = await w.app.app.request(`/api/books/${id}/pages/0`);
+    assertEquals(full.status, 200);
+    assertEquals(full.headers.get("content-type"), "video/mp4");
+    assertEquals(full.headers.get("accept-ranges"), "bytes");
+    assertEquals((await full.arrayBuffer()).byteLength, 64);
+
+    // Range: bytes=0-15 → 206
+    const part = await w.app.app.request(`/api/books/${id}/pages/0`, {
+      headers: { range: "bytes=0-15" },
+    });
+    assertEquals(part.status, 206);
+    assertEquals(part.headers.get("content-range"), "bytes 0-15/64");
+    const partBytes = new Uint8Array(await part.arrayBuffer());
+    assertEquals(partBytes.length, 16);
+    assertEquals(partBytes[15], 15);
+
+    // Range: bytes=32- (open end) → 206
+    const tail = await w.app.app.request(`/api/books/${id}/pages/0`, {
+      headers: { range: "bytes=32-" },
+    });
+    assertEquals(tail.status, 206);
+    assertEquals(tail.headers.get("content-range"), "bytes 32-63/64");
+    assertEquals((await tail.arrayBuffer()).byteLength, 32);
+
+    // Range: bytes=-8 (suffix) → 206
+    const suffix = await w.app.app.request(`/api/books/${id}/pages/0`, {
+      headers: { range: "bytes=-8" },
+    });
+    assertEquals(suffix.status, 206);
+    assertEquals(suffix.headers.get("content-range"), "bytes 56-63/64");
+
+    // 充足不能 Range → 416
+    const bad = await w.app.app.request(`/api/books/${id}/pages/0`, {
+      headers: { range: "bytes=100-" },
+    });
+    assertEquals(bad.status, 416);
+    assertEquals(bad.headers.get("content-range"), "bytes */64");
+    await bad.body?.cancel();
+
+    // サムネイルは zip 内画像 (cover.jpg) から生成される (404 にならない)
+    const thumb = await w.app.app.request(`/api/books/${id}/thumbnail`);
+    assertEquals(thumb.status, 200);
+    await thumb.body?.cancel();
+  } finally {
+    await w.cleanup();
+  }
+});

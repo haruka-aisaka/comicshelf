@@ -144,13 +144,34 @@ export function buildBooksRoutes(deps: BooksDeps): Hono {
         headers: { etag, "cache-control": "private, max-age=3600" },
       });
     }
-    return new Response(data.bytes as BodyInit, {
-      headers: {
-        "content-type": data.contentType,
-        "cache-control": "private, max-age=3600",
-        "etag": etag,
-      },
-    });
+    const baseHeaders = {
+      "content-type": data.contentType,
+      "cache-control": "private, max-age=3600",
+      "etag": etag,
+      "accept-ranges": "bytes",
+    };
+    // Range 対応 (動画再生に必須。 iOS Safari は Range 非対応だと <video> を再生できない)
+    const total = data.bytes.byteLength;
+    const rangeHeader = c.req.header("range");
+    if (rangeHeader) {
+      const range = parseByteRange(rangeHeader, total);
+      if (range === "invalid") {
+        return new Response(null, {
+          status: 416,
+          headers: { ...baseHeaders, "content-range": `bytes */${total}` },
+        });
+      }
+      if (range) {
+        return new Response(data.bytes.subarray(range.start, range.end + 1) as BodyInit, {
+          status: 206,
+          headers: {
+            ...baseHeaders,
+            "content-range": `bytes ${range.start}-${range.end}/${total}`,
+          },
+        });
+      }
+    }
+    return new Response(data.bytes as BodyInit, { headers: baseHeaders });
   });
 
   app.get("/books/:id/thumbnail", async (c) => {
@@ -248,6 +269,33 @@ function parseIntOr(value: string | undefined, fallback: number): number {
  */
 function buildEtag(bookId: number, pageIndex: number, mtime: number, size: number): string {
   return `"b${bookId}p${pageIndex}-${mtime.toString(36)}-${size.toString(36)}"`;
+}
+
+/**
+ * Range ヘッダの解析 (単一レンジのみ対応)。
+ *   - 対応形式: `bytes=a-b` / `bytes=a-` / `bytes=-n` (末尾 n バイト)
+ *   - 複数レンジや bytes 以外の単位は無視 (null = 全体を 200 で返す)
+ *   - 充足不能 (開始が末尾超え等) は "invalid" (416 を返す)
+ */
+function parseByteRange(
+  header: string,
+  total: number,
+): { start: number; end: number } | "invalid" | null {
+  const m = header.match(/^bytes=(\d*)-(\d*)$/);
+  if (!m) return null;
+  const [, startStr, endStr] = m;
+  if (startStr === "" && endStr === "") return null;
+  if (startStr === "") {
+    // suffix: 末尾 n バイト
+    const n = Number(endStr);
+    if (n === 0) return "invalid";
+    const start = Math.max(0, total - n);
+    return total === 0 ? "invalid" : { start, end: total - 1 };
+  }
+  const start = Number(startStr);
+  const end = endStr === "" ? total - 1 : Math.min(Number(endStr), total - 1);
+  if (start >= total || start > end) return "invalid";
+  return { start, end };
 }
 
 /** If-None-Match の解析。複数値カンマ区切り対応、* は常にマッチ。 */
