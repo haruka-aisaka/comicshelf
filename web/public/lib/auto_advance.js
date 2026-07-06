@@ -63,9 +63,7 @@ export function createAutoAdvance(deps) {
 
   // activeStorageKey が指定されていれば前回の「動作中」 フラグを復元。
   // 値が "true" の場合のみ動作中で起動、 それ以外 (未設定/不正値含む) は停止。
-  const restoredActive = activeStorageKey
-    ? storage.getItem(activeStorageKey) === "true"
-    : false;
+  const restoredActive = activeStorageKey ? storage.getItem(activeStorageKey) === "true" : false;
 
   const state = {
     /** 設定値 (常に >= MIN_INTERVAL_SEC)。 永続化する */

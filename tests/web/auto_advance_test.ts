@@ -95,7 +95,7 @@ Deno.test("auto-advance: activeStorageKey なしなら起動時は常に userSto
   assertEquals(s.ticking, false);
 });
 
-Deno.test("auto-advance: activeStorageKey=\"true\" なら起動時に userStopped=false で復元", () => {
+Deno.test('auto-advance: activeStorageKey="true" なら起動時に userStopped=false で復元', () => {
   const h = makeHarness({
     storedSec: "2",
     storedActive: "true",
@@ -111,7 +111,7 @@ Deno.test("auto-advance: activeStorageKey=\"true\" なら起動時に userStoppe
   assertEquals(h.getMoveForwardCalls(), 1);
 });
 
-Deno.test("auto-advance: activeStorageKey=\"false\" や未設定なら停止状態で復元", () => {
+Deno.test('auto-advance: activeStorageKey="false" や未設定なら停止状態で復元', () => {
   for (const v of ["false", "", "garbage", undefined]) {
     const h = makeHarness({
       storedSec: "2",

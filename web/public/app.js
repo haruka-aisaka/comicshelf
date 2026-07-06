@@ -944,7 +944,6 @@ if (menuToggle && scrim) {
       if (window.matchMedia("(max-width: 768px)").matches) closeDrawer();
     }
   });
-
 }
 
 updateFilterToggleActive();
