@@ -325,6 +325,12 @@ function bindEvents() {
     });
   }
 
+  // 単一書籍の再インデックス
+  const reindexBtn = /** @type {HTMLButtonElement|null} */ (document.querySelector("#reindex-btn"));
+  if (reindexBtn) {
+    reindexBtn.addEventListener("click", () => reindexCurrentBook());
+  }
+
   // 表紙設定 / 解除ボタン
   const coverSetBtn = document.querySelector("#cover-set-btn");
   if (coverSetBtn instanceof HTMLElement) {
@@ -1360,6 +1366,41 @@ async function clearCoverSetting() {
     showToast("表紙設定の解除に失敗しました");
   } finally {
     if (clearBtn) clearBtn.disabled = false;
+  }
+}
+
+/**
+ * 単一書籍の再インデックスを実行。
+ *  - 完了トーストを表示してから location.reload() で最新メタで開き直す。
+ *    render() 系を書き直すより単純で、 ?page=N も replaceState で保持されているため
+ *    現在位置は復元される。
+ *  - 実行中は連打防止のためボタン disabled。
+ */
+async function reindexCurrentBook() {
+  const btn = /** @type {HTMLButtonElement|null} */ (document.querySelector("#reindex-btn"));
+  if (!btn || btn.disabled || !Number.isFinite(bookId)) return;
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "再インデックス中…";
+  try {
+    const res = await fetch(`/api/books/${bookId}/reindex`, { method: "POST" });
+    if (!res.ok) {
+      const errorMsg = res.status === 404
+        ? "ファイルが見つかりません"
+        : "再インデックスに失敗しました";
+      showToast(errorMsg);
+      btn.disabled = false;
+      btn.textContent = original;
+      return;
+    }
+    showToast("再インデックスしました");
+    // トーストを一瞬見せてからリロード (トーストは reload で消えるので短時間表示)
+    setTimeout(() => location.reload(), 700);
+  } catch (e) {
+    console.warn("reindex failed", e);
+    showToast("再インデックスに失敗しました");
+    btn.disabled = false;
+    btn.textContent = original;
   }
 }
 

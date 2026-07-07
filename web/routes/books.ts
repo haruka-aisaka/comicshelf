@@ -226,6 +226,19 @@ export function buildBooksRoutes(deps: BooksDeps): Hono {
     return c.json({ cover: null });
   });
 
+  app.post("/books/:id/reindex", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);
+    if (!getBookById(deps.db, id)) return c.json({ error: "book not found" }, 404);
+    const result = await deps.library.reindexBook(id, now());
+    if (result === "not_found") return c.json({ error: "book not found" }, 404);
+    if (result === "file_missing") return c.json({ error: "file missing" }, 404);
+    return c.json({
+      book: result,
+      comicInfo: getComicInfo(deps.db, id),
+    });
+  });
+
   app.post("/books/:id/progress", async (c) => {
     const id = Number(c.req.param("id"));
     if (!Number.isFinite(id)) return c.json({ error: "invalid id" }, 400);

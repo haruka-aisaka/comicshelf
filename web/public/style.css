@@ -1640,6 +1640,27 @@ details[open] > .dir-summary::before {
   color: #0f1115;
 }
 
+/* ---------- 単一書籍の再インデックスボタン ---------- */
+/* 目立ちすぎない grey トーン。 破壊的でない操作なので destructive カラーは避ける */
+.reindex-btn {
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg-muted, #b8bcc4);
+  padding: 8px 14px;
+  font-size: 13px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.reindex-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--fg, #e6e8eb);
+}
+.reindex-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 /* ---------- 表紙設定ボタン ---------- */
 .menu-cover {
   display: flex;
