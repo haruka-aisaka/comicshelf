@@ -968,12 +968,17 @@ let renderGeneration = 0;
 function render() {
   const gen = ++renderGeneration;
   const indices = pageIndicesToShow();
+  const showingVideo = indices.some((i) => isVideoPage(i));
 
   // 100ms 以内に decode が完了すればチラつかせない
   showLoaderDelayed(gen);
 
+  // 動画ページは単ページ扱い: CSS の .spread ルールで幅が 50% に絞られるのを避ける。
+  // ユーザー設定 (spreadCb.checked) は保持したまま、 表示クラスだけ動画ページで外す。
+  pagesEl.classList.toggle("spread", spreadCb.checked && !showingVideo);
+
   // 動画ページ表示中は自動送りカウンターを進めない
-  if (indices.some((i) => isVideoPage(i))) pauseAutoAdvance("video");
+  if (showingVideo) pauseAutoAdvance("video");
   else resumeAutoAdvance("video");
 
   Promise.all(indices.map((i) => isVideoPage(i) ? loadVideoElement(i) : loadImageDecoded(i)))
