@@ -2,14 +2,26 @@ import type { Database } from "@db/sqlite";
 import { dirname, extname, isAbsolute, join, normalize } from "@std/path";
 import type { Book, Config } from "./types.ts";
 import {
+  deleteComicInfo,
   deleteCover,
   deleteCoverIfOutOfRange,
   getBookById,
   getCover,
   updateHasVideo,
   updatePageCount,
+  upsertBook,
+  upsertComicInfo,
 } from "./db/repository.ts";
-import { type PageEntry, readFirstImage, readFirstPage, readPage } from "./reader/archive.ts";
+import { parseComicInfo } from "./comicinfo/parser.ts";
+import { titleFromFilename } from "./indexer/scanner.ts";
+import {
+  hasVideoPages,
+  type PageEntry,
+  readComicInfoXml,
+  readFirstImage,
+  readFirstPage,
+  readPage,
+} from "./reader/archive.ts";
 import { PageCache } from "./reader/page_cache.ts";
 import { generateThumbnailWebp } from "./reader/thumbnail.ts";
 
@@ -208,6 +220,76 @@ export class LibraryService {
       console.warn(`[thumbnail] failed to cache ${bookId}:`, err);
       return { bytes, contentType, mtime: Date.now(), cacheHit: false };
     }
+  }
+
+  /**
+   * 単一書籍のインデックスを完全に再生成する (UI からの明示操作用)。
+   *
+   * 実行内容:
+   *   1. ページキャッシュ (メモリ manifest + ディスク) を破棄
+   *   2. サムネキャッシュを破棄
+   *   3. ファイル stat を取り直し books を upsert (差分判定なし = mode=full 相当)
+   *   4. ComicInfo.xml を再取込 or 削除
+   *   5. hasVideo を再検出
+   *   6. pageCount を null に戻し、 次回 listPages で埋め直させる
+   *
+   * 既読・お気に入り・表紙設定は book.id が保持されるため触らない
+   * (表紙ページが新ページ数範囲外なら listPages 側の自動リセットで対応)。
+   *
+   * @returns 更新後の Book / ファイルが消えていれば "file_missing" / パス解決失敗で "not_found"
+   */
+  async reindexBook(
+    bookId: number,
+    now: number = Math.floor(Date.now() / 1000),
+  ): Promise<Book | "not_found" | "file_missing"> {
+    const resolved = this.resolveBook(bookId);
+    if (!resolved) return "not_found";
+    let stat;
+    try {
+      stat = await Deno.stat(resolved.absPath);
+    } catch {
+      return "file_missing";
+    }
+    // キャッシュ破棄はメタ再取込の前に。 ZipReader が握っているファイルハンドルも
+    // ここで解放されるので、 このあとの readComicInfoXml/hasVideoPages が最新
+    // ファイル内容を読む。
+    await this.invalidateBookCache(bookId);
+
+    let hasVideo = false;
+    try {
+      hasVideo = await hasVideoPages(resolved.absPath);
+    } catch (err) {
+      console.warn(`[reindex] hasVideoPages(${bookId}) failed:`, err);
+    }
+
+    const book = upsertBook(this.db, {
+      rootId: resolved.book.rootId,
+      path: resolved.book.path,
+      filename: resolved.book.filename,
+      title: titleFromFilename(resolved.book.filename),
+      directory: resolved.book.directory,
+      sizeBytes: stat.size,
+      modifiedAt: Math.floor((stat.mtime?.getTime() ?? Date.now() * 1000) / 1000),
+      pageCount: null,
+      hasVideo,
+    }, now);
+    // pageCount は upsertBook の COALESCE により旧値が残るので明示的に null に戻す
+    updatePageCount(this.db, bookId, null);
+
+    try {
+      const xml = await readComicInfoXml(resolved.absPath);
+      if (xml) {
+        const info = parseComicInfo(xml);
+        if (info) upsertComicInfo(this.db, bookId, info, now);
+        else deleteComicInfo(this.db, bookId);
+      } else {
+        deleteComicInfo(this.db, bookId);
+      }
+    } catch (err) {
+      console.warn(`[reindex] ComicInfo.xml 読込失敗 (${bookId}):`, err);
+    }
+
+    return { ...book, pageCount: null };
   }
 
   async invalidateBookCache(bookId: number): Promise<void> {

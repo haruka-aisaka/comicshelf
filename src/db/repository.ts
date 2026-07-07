@@ -76,8 +76,8 @@ export function upsertBook(db: Database, input: BookUpsertInput, now: number): B
   return rowToBook(row);
 }
 
-/** pageCountのみ更新 (アーカイブ走査後の事後更新用) */
-export function updatePageCount(db: Database, bookId: number, pageCount: number): void {
+/** pageCountのみ更新 (アーカイブ走査後の事後更新用)。 null を渡すと再検出待ち状態に戻せる */
+export function updatePageCount(db: Database, bookId: number, pageCount: number | null): void {
   db.prepare("UPDATE books SET page_count = ? WHERE id = ?").run(pageCount, bookId);
 }
 

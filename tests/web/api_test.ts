@@ -568,3 +568,89 @@ Deno.test("API: 動画ブック (cover.jpg + mp4) のページ配信 + Range 対
     await w.cleanup();
   }
 });
+
+Deno.test("API: POST /books/:id/reindex — ComicInfo 差し替えが反映される", async () => {
+  const w = await setupWorld();
+  try {
+    await w.app.app.request("/api/index/rebuild", { method: "POST" });
+    for (let i = 0; i < 100; i++) {
+      const s = await (await w.app.app.request("/api/index/status")).json();
+      if (!s.running) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const list = await (await w.app.app.request("/api/books?sort=title")).json();
+    const target = list.books.find((b: { title: string }) => b.title === "oneshot");
+    const id = target.id;
+
+    // 初期状態: ComicInfo なし + お気に入りをつけて保持されるかも見る
+    await w.app.app.request(`/api/books/${id}/favorite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ favorited: true }),
+    });
+
+    // zip を差し替え: ComicInfo.xml 追加 + mp4 追加 (動画ブック化)
+    const filePath = join(w.libraryRoot, "series-b/oneshot.cbz");
+    await writeCbz(filePath, [
+      { name: "cover.jpg", data: fakeJpegBytes(1) },
+      { name: "movie.mp4", data: new Uint8Array([1, 2, 3, 4]) },
+      {
+        name: "ComicInfo.xml",
+        data:
+          '<?xml version="1.0"?><ComicInfo><Title>Reindexed Title</Title><Writer>Test Writer</Writer></ComicInfo>',
+      },
+    ]);
+
+    const res = await w.app.app.request(`/api/books/${id}/reindex`, { method: "POST" });
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    // 動画ブックとして再検出、 pageCount は null に戻り遅延埋め待ち
+    assertEquals(body.book.hasVideo, true);
+    assertEquals(body.book.pageCount, null);
+    // ComicInfo が新規取り込みされている
+    assertEquals(body.comicInfo?.title, "Reindexed Title");
+    assertEquals(body.comicInfo?.writer, "Test Writer");
+
+    // ページ一覧: 動画のみ
+    const pagesRes = await (await w.app.app.request(`/api/books/${id}/pages`)).json();
+    assertEquals(pagesRes.pages, ["0000.mp4"]);
+
+    // お気に入り状態は保持
+    const detail = await (await w.app.app.request(`/api/books/${id}`)).json();
+    assertEquals(detail.favorite?.favorited, true);
+    // pageCount も listPages 経由で反映されている
+    assertEquals(detail.book.pageCount, 1);
+  } finally {
+    await w.cleanup();
+  }
+});
+
+Deno.test("API: POST /books/:id/reindex — 不明 id / 欠損ファイル", async () => {
+  const w = await setupWorld();
+  try {
+    await w.app.app.request("/api/index/rebuild", { method: "POST" });
+    for (let i = 0; i < 100; i++) {
+      const s = await (await w.app.app.request("/api/index/status")).json();
+      if (!s.running) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    // 存在しない id → 404
+    const notFound = await w.app.app.request("/api/books/99999/reindex", { method: "POST" });
+    assertEquals(notFound.status, 404);
+
+    // ファイル消失 → 404 (DB は削除しない)
+    const list = await (await w.app.app.request("/api/books?sort=title")).json();
+    const id = list.books[0].id;
+    const filePath = join(w.libraryRoot, list.books[0].path);
+    await Deno.remove(filePath);
+    const missing = await w.app.app.request(`/api/books/${id}/reindex`, { method: "POST" });
+    assertEquals(missing.status, 404);
+    const errBody = await missing.json();
+    assertEquals(errBody.error, "file missing");
+    // DB から消えていないこと
+    const still = await w.app.app.request(`/api/books/${id}`);
+    assertEquals(still.status, 200);
+  } finally {
+    await w.cleanup();
+  }
+});
