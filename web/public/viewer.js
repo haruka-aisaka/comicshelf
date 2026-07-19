@@ -213,6 +213,11 @@ async function init() {
     pageInput.max = String(totalPages);
     seekTotal.textContent = String(totalPages);
     syncSeekUi();
+    // 底部の進捗バーは render() 経由で更新されるが、 初期表紙 (currentPage=0) で
+    // サムネの decode が pagesReady より遅いと render() が呼ばれず、
+    // totalPages 確定後もバーが 0% のまま (Android で decode が遅い時に頻発する)。
+    // ここで明示的に更新して race を塞ぐ。
+    updateProgressBar();
     if (
       currentPage !== 0 || isVideoPage(currentPage) ||
       pagesEl.querySelector("img[data-from-thumb='1']")
