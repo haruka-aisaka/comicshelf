@@ -1,4 +1,6 @@
 // @ts-check
+import { initSafeArea } from "/lib/safe_area.js";
+initSafeArea();
 /**
  * comicshelf 一覧画面のロジック。
  *  - クエリパラメータ (sort, directory) でビューを切替

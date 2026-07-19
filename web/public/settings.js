@@ -1,4 +1,6 @@
 // @ts-check
+import { initSafeArea } from "/lib/safe_area.js";
+initSafeArea();
 import("/sw-register.js").catch(() => {});
 /** 設定画面ロジック。 サーバの index status を取得し再インデックスを実行する。 */
 

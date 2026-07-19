@@ -1,7 +1,9 @@
 // @ts-check
 import { alignToPair as alignToPairPure, clamp } from "/lib/viewer_util.js";
 import { createAutoAdvance } from "/lib/auto_advance.js";
+import { initSafeArea } from "/lib/safe_area.js";
 import("/sw-register.js").catch(() => {});
+initSafeArea();
 /**
  * comicshelf ビューワー。
  *

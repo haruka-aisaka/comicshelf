@@ -6,7 +6,7 @@
  *  - /api/ は network のみ (オンライン時のみ動作)、 サムネ /api/books/{id}/thumbnail は stale-while-revalidate
  */
 
-const CACHE_VERSION = "comicshelf-v24";
+const CACHE_VERSION = "comicshelf-v25";
 const THUMB_CACHE = "comicshelf-thumb-v1";
 /** サムネキャッシュの最大保持数。 LRU 風に超過分を古い順に削除。 */
 const THUMB_CACHE_MAX_ENTRIES = 300;
