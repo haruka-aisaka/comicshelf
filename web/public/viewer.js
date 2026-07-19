@@ -310,6 +310,20 @@ function bindEvents() {
     // 古い Safari 向けフォールバック
     orientationLandscapeMq.addListener?.(onOrientation);
   }
+  // viewport サイズ変化 (foldable の開閉、 Android Chrome の URL バー伸縮、
+  // ウィンドウリサイズ等) 時に、 orientation カテゴリが変わらないケースでは
+  // applySpreadModeChange が早期 return し render も走らない。 その結果
+  // 底部の進捗バーが 100dvh 再計算前の位置に取り残されて見えないことがある
+  // (foldable を開いたときに再現。 一度バックグラウンドに回すと再描画で復帰)。
+  // 明示的に render() を再実行して bar を含む layer の layout を復元する。
+  let resizeDebounce;
+  window.addEventListener("resize", () => {
+    if (resizeDebounce !== undefined) clearTimeout(resizeDebounce);
+    resizeDebounce = setTimeout(() => {
+      if (totalPages > 0) render();
+      else updateProgressBar();
+    }, 150);
+  });
   fitSel.addEventListener("change", () => applyFit());
   if (directionSel) {
     directionSel.value = direction;
