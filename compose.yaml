@@ -13,7 +13,13 @@ services:
       dockerfile: Dockerfile
     image: comicshelf:latest
     container_name: comicshelf
-    restart: unless-stopped
+    # 連続失敗時の暴走 (無限リスタート → NAS 大量再スキャン等) を防ぐため回数制限あり
+    restart: on-failure:5
+    # メモリ上限 (memory cgroup 有効化が前提)
+    # warmup 中の anon-rss ピークが 512MB を突破し OOM リスタートループが発生したため 1GB に引き上げ
+    mem_limit: 1g
+    memswap_limit: 2g
+    mem_reservation: 512m
     ports:
       # BIND_ADDR を指定すると特定インターフェースのみで待ち受け
       # 例: Tailscale IPを指定すればVPN経由のみアクセス可能になる
