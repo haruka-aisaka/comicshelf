@@ -3,10 +3,10 @@
  * comicshelf Service Worker
  *  - 静的アセットを install時に precache
  *  - 同一オリジンの静的ファイル取得は cache-first、 ナビゲーションは network-first (fallback to cache)
- *  - /api/ は network のみ (オンライン時のみ動作)、 サムネ /api/books/*/thumbnail は stale-while-revalidate
+ *  - /api/ は network のみ (オンライン時のみ動作)、 サムネ /api/books/{id}/thumbnail は stale-while-revalidate
  */
 
-const CACHE_VERSION = "comicshelf-v21";
+const CACHE_VERSION = "comicshelf-v22";
 const THUMB_CACHE = "comicshelf-thumb-v1";
 /** サムネキャッシュの最大保持数。 LRU 風に超過分を古い順に削除。 */
 const THUMB_CACHE_MAX_ENTRIES = 300;
@@ -21,6 +21,9 @@ const STATIC_ASSETS = [
   "/sw-register.js",
   "/manifest.json",
   "/icons/icon.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/icon-512-maskable.png",
 ];
 
 self.addEventListener("install", (event) => {

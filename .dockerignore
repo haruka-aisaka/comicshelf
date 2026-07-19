@@ -13,5 +13,6 @@ config/config.json
 README.md
 docs/
 tests/
+scripts/
 .env
 .env.*
